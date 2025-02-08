@@ -52,12 +52,12 @@ def retrieve_dict(database_name):
     return database.find({}, {"_id": 0})
 
 
-p1 = Planet(1,2,3,4,5,6,7, ["Rock"])
+# p1 = Planet(1,2,3,4,5,6,7, ["Rock"])
 
-# KEEP THIS COMMENTED (it flushes the database)
-testPlanet = dbname["Planet_Test"]
-testPlanet.drop()
+# # KEEP THIS COMMENTED (it flushes the database)
+# testPlanet = dbname["Planet_Test"]
+# testPlanet.drop()
 
-insert(p1.to_dict(), "Planet_Test")
-for doc in retrieve_dict("Planet_Test"):
-    print(doc)
+# insert(p1.to_dict(), "Planet_Test")
+# for doc in retrieve_dict("Planet_Test"):
+#     print(doc)
