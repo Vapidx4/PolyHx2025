@@ -1,0 +1,4 @@
+List of pip install:
+
+pip install pymongo
+pip install python-dotenv
