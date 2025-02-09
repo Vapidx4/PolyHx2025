@@ -7,9 +7,27 @@
     <style>
         * { margin: 0; padding: 0; overflow: hidden; }
         canvas { display: block; background: black; }
+        body {
+            color: white;
+            font-family: Arial, sans-serif;
+            position: absolute;
+            top: 20px;
+            left: 20px;
+        }
+        label {
+            margin-right: 10px;
+        }
+        input {
+            margin-bottom: 20px;
+        }
     </style>
 </head>
 <body>
+    <label for="startNode">Start Node:</label>
+    <input type="text" id="startNode" placeholder="Enter start node (e.g., A)" />
+    <input type="text" id="endNode" placeholder="Enter end node (e.g., D)" />
+    <input type="text" id="fuelLv" placeholder="Enter inital fuel lv" />
+    <button onclick="sendNodeDataToServer()">Submit</button>
     <canvas id="canvas"></canvas>
     <script>
         const canvas = document.getElementById("canvas");
@@ -17,24 +35,27 @@
 
         let nodes = [];
         let firstNode = true;
-        const nodeCount = 5; // Adjust as needed
-        const minDistance = 80; // Minimum spacing between nodes
+        const nodeCount = 5;
+        const minDistance = 80;
+        const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        let finalGraph = {};
+        let fuelData = {};
 
         function resizeCanvas() {
             canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
-            //generateNodes();
-            //draw();
+            canvas.height = window.innerHeight - 50;
         }
 
         function generateNodes() {
             nodes = [];
+            let nodeIdIndex = 0;  // Unique ID for each node
             while (nodes.length < nodeCount) {
                 let newNode = {
+                    id: letters[nodeIdIndex],
                     x: Math.random() * canvas.width,
                     y: Math.random() * canvas.height,
                     radius: 8,
-                    weight: Math.floor(Math.random() * 10) + 1
+                    fuel : Math.floor(Math.random() * 201)
                 };
 
                 // Check if the new node is far enough from all existing nodes
@@ -42,8 +63,35 @@
 
                 if (valid) {
                     nodes.push(newNode);
+                    nodeIdIndex++;
                 }
             }
+            createGraph();
+        }
+
+        function createGraph() {
+            let graph = {};
+            let fuels = {};
+
+            for (let i = 0; i < nodes.length; i++) {
+                const node = nodes[i];
+                graph[node.id] = {};
+                fuels[node.id] = node.fuel;
+
+
+                for (let j = 0; j < nodes.length; j++) {
+                    if (i !== j) {  // Skip self-connections
+                        const otherNode = nodes[j];
+
+                        // Calculate the distance between nodes
+                        const dist = distance(node, otherNode);
+
+                        graph[node.id][otherNode.id] = Math.floor(dist);  // Store the distance directly
+                    }
+                }
+            }
+            finalGraph = graph;
+            fuelData = fuels;
         }
 
         function distance(a, b) {
@@ -58,37 +106,69 @@
             ctx.lineWidth = 1;
             for (let i = 0; i < nodes.length; i++) {
                 for (let j = i + 1; j < nodes.length; j++) {
+                    let nodeA = nodes[i];
+                    let nodeB = nodes[j];
+                    
+                    let isPathEdge = shortestPathEdges.some(
+                        ([a, b]) => (a === nodeA.id && b === nodeB.id) || (a === nodeB.id && b === nodeA.id)
+                    );
+
+                    ctx.strokeStyle = isPathEdge ? "red" : "white";
+
                     ctx.beginPath();
                     ctx.moveTo(nodes[i].x, nodes[i].y);
                     ctx.lineTo(nodes[j].x, nodes[j].y);
                     ctx.stroke();
+
+                    // Get the distance from the graph
+                    ctx.fillStyle = "white";
+                    ctx.font = "18px Arial";
+                    let dist = finalGraph[nodes[i].id][nodes[j].id];
+                    let midX = (nodes[i].x + nodes[j].x) / 2;
+                    let midY = (nodes[i].y + nodes[j].y) / 2;
+                    ctx.fillText(dist, midX, midY);
                 }
             }
-
-            ctx.font = "16px Arial";
 
             // Draw nodes
             for (let node of nodes) {
                 ctx.fillStyle = "cyan";
                 if (node == nodes[0]) {
-                    ctx.fillStyle = "red"
+                    ctx.fillStyle = "red";
                 }
                 ctx.beginPath();
                 ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
                 ctx.fill();
 
-                // Draw weight
-                ctx.fillStyle = "white";
-                ctx.fillText(node.weight, node.x + 12, node.y - 12);
+                // Draw the node label (ID)
+                ctx.fillText(node.id, node.x + 12, node.y + 12);
+
+                // Draw the fuel level
+                ctx.fillStyle = "green";
+                ctx.fillText(node.fuel, node.x + 12, node.y - 12);
             }
         }
 
-        function sendNodePositionsToServer() {
-            // Prepare the data (array of nodes with x and y positions)
-            const nodeData = nodes.map(node => ({
-                x: node.x,
-                y: node.y
-            }));
+        let shortestPathEdges = [];
+
+        function sendNodeDataToServer() {
+            const startNode = document.getElementById("startNode").value;
+            const endNode = document.getElementById("endNode").value;
+            const fuelLv = document.getElementById("fuelLv").value;
+
+            if (!startNode || !endNode || !fuelLv) {
+                alert("Please enter both start, end nodes and fuel lv.");
+                return;
+            }
+
+            // Prepare the data to be sent
+            const data = {
+                graph: finalGraph,
+                fuels: fuelData,
+                startNode: startNode,
+                endNode: endNode,
+                fuel_capacity : fuelLv
+            };
 
             // Send the data via a POST request
             fetch('http://localhost:8080/submit-nodes', {
@@ -96,22 +176,34 @@
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify(nodeData) // Convert nodeData to JSON
+                body: JSON.stringify(data) // Send the graph, startNode, and endNode as JSON
             })
             .then(response => response.json())
             .then(data => {
                 console.log('Server Response:', data);
+
+                if (data.status === "error") {
+                    alert("Error: " + data.message); // "Not enough fuel" message
+                    return;
+                }
+
+                alert('Shortest Path: ' + data.path.join(' -> ') + '\nTotal Distance: ' + data.distance);
+
+                shortestPathEdges = [];
+                for (let i = 0; i < data.path.length - 1; i++) {
+                    shortestPathEdges.push([data.path[i], data.path[i + 1]]);
+                }
+
+                draw(); // Redraw canvas to highlight the path
             })
             .catch(error => {
                 console.error('Error sending data to server:', error);
             });
         }
 
-        //window.addEventListener("resize", resizeCanvas);
         resizeCanvas();
         generateNodes();
         draw();
-        sendNodePositionsToServer();
     </script>
 </body>
 </html>
