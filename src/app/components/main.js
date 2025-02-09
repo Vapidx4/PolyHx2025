@@ -7,6 +7,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { GUI } from "dat.gui";
 import Planet from "./Planet";
 
@@ -24,6 +25,8 @@ const PlanetScene = () => {
 
     // Create renderer and attach it.
     const renderer = new THREE.WebGLRenderer();
+    renderer.outputEncoding = THREE.sRGBEncoding;
+
     renderer.setSize(window.innerWidth, window.innerHeight);
     containerRef.current.appendChild(renderer.domElement);
 
@@ -39,6 +42,9 @@ const PlanetScene = () => {
     ]);
     // Set Z as the up direction.
     scene.up.set(0, 0, 1);
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 2);
+scene.add(ambientLight);
 
     // Set up camera.
     const camera = new THREE.PerspectiveCamera(
@@ -414,37 +420,59 @@ const PlanetScene = () => {
       const fontface = parameters.fontface || "Arial";
       const fontsize = parameters.fontsize || 24;
       const borderThickness = parameters.borderThickness || 4;
+      const backgroundColor = parameters.backgroundColor || "rgba(0, 0, 0, 0.6)"; // Semi-transparent black
+      const textColor = parameters.textColor || "rgba(255, 255, 255, 1.0)"; // White text
+    
       const canvas = document.createElement("canvas");
       const context = canvas.getContext("2d");
-      context.font = fontsize + "px " + fontface;
+    
+      // Set font
+      context.font = `${fontsize}px ${fontface}`;
       const metrics = context.measureText(message);
       const textWidth = metrics.width;
-      canvas.width = textWidth + borderThickness * 2;
-      canvas.height = fontsize * 1.4 + borderThickness * 2;
-      context.font = fontsize + "px " + fontface;
-      context.fillStyle = "rgba(255, 255, 255, 0.0)";
+    
+      // Set canvas size based on text width & height
+      canvas.width = textWidth + borderThickness * 10; // Extra padding
+      canvas.height = fontsize * 1.8 + borderThickness * 4; // Extra padding
+    
+      // Draw background rectangle
+      context.fillStyle = backgroundColor;
       context.fillRect(0, 0, canvas.width, canvas.height);
-      context.fillStyle = "rgba(255, 255, 255, 1.0)";
+    
+      // Draw text
+      context.fillStyle = textColor;
       context.textAlign = "center";
       context.textBaseline = "middle";
+      context.font = `${fontsize}px ${fontface}`;
       context.fillText(message, canvas.width / 2, canvas.height / 2);
+    
+      // Convert canvas to texture
       const texture = new THREE.CanvasTexture(canvas);
       texture.needsUpdate = true;
+    
+      // Create sprite
       const spriteMaterial = new THREE.SpriteMaterial({
         map: texture,
         transparent: true,
       });
+    
       const sprite = new THREE.Sprite(spriteMaterial);
-      sprite.scale.set(100, 50, 1);
+      sprite.scale.set(100, 50, 1); // Adjust size as needed
+    
+      // Store canvas data for future updates
       sprite.userData = {
         canvas,
         context,
         fontface,
         fontsize,
         borderThickness,
+        backgroundColor,
+        textColor,
       };
+    
       return sprite;
     }
+    
 
     // Create parameter sets for different planet types.
     const baselinePlanetParams = {
@@ -541,7 +569,25 @@ const PlanetScene = () => {
       const randomType =
         planetTypes[Math.floor(Math.random() * planetTypes.length)];
       const planetParams = clonePlanetParams(randomType);
+      
+      // Optionally choose a type value.
       planetParams.type.value = Math.random() < 0.5 ? 2 : 3;
+      
+      // Randomly generate amplitude and lacunarity.
+      // Amplitude will be a random number between 1 and 5.
+      planetParams.amplitude.value = Math.random() * 0.5 + 1;
+            // Lacunarity will be a random number between 1.5 and 3.
+      planetParams.lacunarity.value = Math.random() * 1.5 + 1.5;
+      
+      // Add atmosphere condition randomly.
+      const atmosphereConditions = ["healthy", "polluted", "dangerous"];
+      const randomAtmosphere =
+        atmosphereConditions[
+          Math.floor(Math.random() * atmosphereConditions.length)
+        ];
+      planetParams.atmosphereCondition = { value: randomAtmosphere };
+      
+      // Create the planet object.
       const planetObj = Planet({
         scene,
         planetParams,
@@ -554,21 +600,27 @@ const PlanetScene = () => {
           document.getElementById("planet-frag-shader")?.innerHTML ||
           "void main() { gl_FragColor = vec4(1.0); }",
       });
+      
+      // Set the planet's position.
       const pos = planetPositions[i];
       planetObj.planet.position.set(pos.x, pos.y, 0);
+      
       const planetId = i;
       const planetName = generatePlanetName();
       planetObj.planet.userData.id = planetId;
       planetObj.planet.userData.name = planetName;
+      
       const nameLabel = createTextSprite(planetName, {
-        fontsize: 12,
+        fontsize: 121,
         fontface: "Arial",
         borderThickness: 1,
       });
       nameLabel.position.set(0, 0, planetParams.radius.value + 15);
       planetObj.planet.add(nameLabel);
+      
       planets.push({ ...planetObj, params: planetParams });
     }
+    
 
     // Build the weighted adjacency list.
     const adjacencyList = {};
@@ -910,43 +962,78 @@ const PlanetScene = () => {
           );
           return;
         }
-        let stops = tradeRouteStops.map((p) => p.position.clone());
-        if (!stops[stops.length - 1].equals(stops[0])) {
-          let retrace = [];
-          for (let i = stops.length - 1; i >= 0; i--) {
-            retrace.push(stops[i]);
-            if (stops[i].equals(stops[0])) break;
+
+        // Load the spaceship model
+        const loader = new GLTFLoader();
+        loader.load(
+          "space_ship.glb",
+          (gltf) => {
+            const spaceship = gltf.scene;
+            spaceship.scale.set(5, 5, 5); // Adjust scale if needed
+            spaceship.position.copy(tradeRouteStops[0].position);
+
+            // Adjust rotation to align with movement
+            spaceship.rotation.set(0, Math.PI, 0);
+
+            // Create a point light source for the spaceship
+            // const shipLight = new THREE.PointLight(0x00ffff, 10, 1000);
+            // shipLight.position.set(0, 5, 5); // Slightly above the spaceship
+
+            const shipLight = new THREE.SpotLight(
+              0xffffff,
+              10,
+              500,
+              Math.PI / 4,
+              0.5
+            );
+            shipLight.position.set(0, 5, 10);
+            shipLight.target = spaceship;
+            shipLight.castShadow = true; // Enable shadows for depth
+            spaceship.add(shipLight);
+
+            // Attach the light to the spaceship model
+            spaceship.add(shipLight);
+
+            gltf.scene.traverse((child) => {
+              if (child.isMesh && child.material) {
+                // This ensures the material is updated and visible.
+                child.material.side = THREE.DoubleSide;
+                child.material.needsUpdate = true;
+                if (child.material.emissive) {
+                  child.material.emissive = new THREE.Color(0xf1ddd9);
+                }
+              }
+            });
+            
+
+            scene.add(spaceship);
+
+            const fuelSprite = createTextSprite(`Fuel: 300`, {
+              fontsize: 20,
+              fontface: "Arial",
+              borderThickness: 2,
+            });
+            fuelSprite.position.set(0, 0, 80);
+
+            const tradeShip = {
+              mesh: spaceship,
+              stops: tradeRouteStops.map((p) => p.position.clone()),
+              currentSegment: 0,
+              progress: 0,
+              speed: 50,
+              fuel: 1000,
+              maxFuel: 1000,
+              fuelIndicator: fuelSprite,
+              light: shipLight, // Store light reference (optional)
+            };
+
+            activeTradeShips.push(tradeShip);
+          },
+          undefined,
+          (error) => {
+            console.error("Error loading spaceship model:", error);
           }
-          stops = stops.concat(retrace);
-        }
-        const tradeShipGeometry = new THREE.SphereGeometry(50, 32, 32);
-        const tradeShipMaterial = new THREE.MeshBasicMaterial({
-          color: 0xff0000,
-        });
-        const tradeShipMesh = new THREE.Mesh(
-          tradeShipGeometry,
-          tradeShipMaterial
         );
-        tradeShipMesh.position.copy(stops[0]);
-        scene.add(tradeShipMesh);
-        const fuelSprite = createTextSprite(`Fuel: 300`, {
-          fontsize: 20,
-          fontface: "Arial",
-          borderThickness: 2,
-        });
-        fuelSprite.position.set(0, 0, 80);
-        // tradeShipMesh.add(fuelSprite);
-        const tradeShip = {
-          mesh: tradeShipMesh,
-          stops: stops,
-          currentSegment: 0,
-          progress: 0,
-          speed: 50,
-          fuel: 1000,
-          maxFuel: 1000,
-        };
-        tradeShip.fuelIndicator = fuelSprite;
-        activeTradeShips.push(tradeShip);
       },
       clearTradeRoute: function () {
         tradeRouteStops = [];

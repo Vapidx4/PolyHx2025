@@ -7,6 +7,7 @@ const WATER_PRODUCTION = 2.5;
 const FOOD_PRODUCTION = 2.5;
 const POPULATION_GROWTH = 1.1;
 const SHIP_COST = 100;
+const ATMOSPHERE_VISIBILITY_THRESHOLD = 100;
 
 const Planet = ({ scene, planetParams, noiseFunctions, vertexShader, fragmentShader }) => {
   // Initialize state to hold the planet's resources and properties
@@ -53,6 +54,21 @@ const Planet = ({ scene, planetParams, noiseFunctions, vertexShader, fragmentSha
   }
   scene.add(planet);
 
+    // Determine the atmosphere color based on atmosphereCondition
+    let atmosphereColor = "#ffffff"; // default to white (healthy)
+    if (planetParams.atmosphereCondition) {
+      // Support both an object with a 'value' property or a simple string.
+      const condition =
+        planetParams.atmosphereCondition.value || planetParams.atmosphereCondition;
+      if (condition === "healthy") {
+        atmosphereColor = "#ffffff"; // white
+      } else if (condition === "polluted") {
+        atmosphereColor = "#ffff00"; // yellow
+      } else if (condition === "dangerous") {
+        atmosphereColor = "#ffa500"; // orange
+      }
+    }
+
   // Add atmosphere as a child of the planet
   const atmosphere = createAtmosphere({
     particles: 250,
@@ -66,7 +82,7 @@ const Planet = ({ scene, planetParams, noiseFunctions, vertexShader, fragmentSha
     density: -0.2,
     opacity: 0.8,
     scale: 4,
-    color: "#ffffff",
+    color: atmosphereColor,
     speed: 0.03,
     // Handle planetParams.lightDirection similarly; defaulting to a simple vector if not provided.
     lightDirection: planetParams.lightDirection
@@ -74,6 +90,15 @@ const Planet = ({ scene, planetParams, noiseFunctions, vertexShader, fragmentSha
       : new THREE.Vector3(1, 1, 1),
   });
   planet.add(atmosphere);
+
+    // Make the atmosphere invisible when the camera is too far away.
+  // The onBeforeRender callback receives the current camera.
+  atmosphere.onBeforeRender = (renderer, scene, camera, geometry, material, group) => {
+    const distance = camera.position.distanceTo(planet.position);
+    // Toggle visibility based on the threshold
+    atmosphere.visible = distance <= ATMOSPHERE_VISIBILITY_THRESHOLD;
+  };
+
 
   // Resource update simulation
 //   useEffect(() => {
