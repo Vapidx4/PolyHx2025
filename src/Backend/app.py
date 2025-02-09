@@ -1,55 +1,29 @@
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, request
 from flask_cors import CORS
-from PathOptimizer import dijkstra, dijkstra_with_fuel
+from Database import retrieve_dict, insert
 
 app = Flask(__name__)
-CORS(app)
+CORS(app)  # Enable CORS for the frontend to fetch data
 
-fuel_efficiency = 0.5
-
-@app.route("/")
-def index():
-    return render_template("index.html")
-
-@app.route('/submit-nodes', methods=['POST'])
-def submit_nodes():
+@app.route('/api/database/<database_name>/', methods=['GET'])
+def get_data(database_name):
     try:
-        data = request.get_json()
-
-        graph = data.get('graph')
-        start_node = data.get('startNode')
-        end_node = data.get('endNode')
-        fuels = data.get('fuels')
-        fuel_capacity = int(data.get('fuel_capacity'))
-
-        distance, path = dijkstra(graph, start_node, end_node)
-
-        print(fuel_capacity)
-        print(start_node)
-        print(distance)
-        print(fuel_efficiency)
-
-        if (fuel_capacity < distance * fuel_efficiency) :
-            distance, path, stops = dijkstra_with_fuel(graph, fuels, start_node, end_node, fuel_capacity, fuel_efficiency)
-
-            if stops == -1:  # Not enough fuel
-                print("Not enough fuel to travel")
-                return jsonify({
-                    "status": "error",
-                    "message": "Not enough fuel to reach the destination."
-                }), 400  # Return a 400 Bad Request error
-
-        print(distance)
-        print(path)
-        print(fuels)
-
-        return jsonify({
-            "status": "success",
-            "path": path,
-            "distance": distance
-        })
+        response = retrieve_dict(database_name)
+        return jsonify(response)
     except Exception as e:
+        print(e)
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/database/<database_name>/', methods=['POST'])
+def set_data(database_name):
+    try:
+        data = request.json
+        response = insert(data, database_name)
+        return jsonify(response)
+    except Exception as e:
+        print(e)
+        return jsonify({"error" : str(e)}), 500
+
+
 if __name__ == '__main__':
-    app.run(debug=True, port=8080)
+    app.run(debug=True)
