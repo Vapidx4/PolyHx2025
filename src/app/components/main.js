@@ -87,15 +87,16 @@ const PlanetScene = () => {
     let selectedPlanet = null; // For normal mode selection.
     let focusedRing = null;
     const connectionLines = [];
+    let pathLine = null; // For displaying computed path
     const distanceLabels = [];
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
-    // --- NEW: Trade Route Mode Variables ---
+    // --- Trade Route Mode Variables ---
     let tradeRouteMode = false; // If true, clicking adds to a trade route.
-    let tradeRouteStops = [];   // Array of planet objects (stops) for the current trade route.
-    let routeLine = null;       // The drawn polyline for the route.
-    const activeTradeShips = []; // Array to hold all trade ships in flight.
+    let tradeRouteStops = []; // Array of planet objects (stops) for the current trade route.
+    let routeLine = null; // The drawn polyline for the route.
+    const activeTradeShips = [];
 
     // Helper: update the GUI display of trade route stops.
     function updateRouteStopsDisplay() {
@@ -126,17 +127,27 @@ const PlanetScene = () => {
       context.fillText(message, canvas.width / 2, canvas.height / 2);
       const texture = new THREE.CanvasTexture(canvas);
       texture.needsUpdate = true;
-      const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true });
+      const spriteMaterial = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+      });
       const sprite = new THREE.Sprite(spriteMaterial);
       sprite.scale.set(100, 50, 1);
       // Store canvas data for future updates.
-      sprite.userData = { canvas, context, fontface, fontsize, borderThickness };
+      sprite.userData = {
+        canvas,
+        context,
+        fontface,
+        fontsize,
+        borderThickness,
+      };
       return sprite;
     }
 
     // New: update an existing text sprite.
     function updateTextSprite(sprite, message) {
-      const { canvas, context, fontface, fontsize, borderThickness } = sprite.userData;
+      const { canvas, context, fontface, fontsize, borderThickness } =
+        sprite.userData;
       context.font = fontsize + "px " + fontface;
       const metrics = context.measureText(message);
       const textWidth = metrics.width;
@@ -190,40 +201,33 @@ const PlanetScene = () => {
       const b = 2 * f.dot(d);
       const c = f.dot(f) - radius * radius;
       let discriminant = b * b - 4 * a * c;
-      if (discriminant < 0) {
-        return false;
-      }
+      if (discriminant < 0) return false;
       discriminant = Math.sqrt(discriminant);
       const t1 = (-b - discriminant) / (2 * a);
       const t2 = (-b + discriminant) / (2 * a);
       return (t1 >= 0 && t1 <= 1) || (t2 >= 0 && t2 <= 1);
     }
 
-    // Function to draw connections between planets (used in normal mode).
+    // Modified showConnections using the weighted adjacency list.
     function showConnections(planet) {
       const baseColor = new THREE.Color(0x00ff88);
-      planets.forEach((otherPlanet) => {
-        if (otherPlanet.planet !== planet) {
-          if (!intersectsSun(planet.position, otherPlanet.planet.position)) {
-            const lineGeometry = new THREE.BufferGeometry().setFromPoints([
-              planet.position,
-              otherPlanet.planet.position,
-            ]);
-            const lineMaterial = new THREE.LineBasicMaterial({
-              color: baseColor,
-              transparent: true,
-              opacity: 0.5,
-            });
-            const line = new THREE.Line(lineGeometry, lineMaterial);
-            scene.add(line);
-            connectionLines.push(line);
-          }
-        }
+      const planetId = planet.userData.id;
+      const neighbors = adjacencyList[planetId] || [];
+      neighbors.forEach(({ planet: neighbor, weight }) => {
+        const lineGeometry = new THREE.BufferGeometry().setFromPoints([
+          planet.position,
+          neighbor.position,
+        ]);
+        const lineMaterial = new THREE.LineBasicMaterial({
+          color: baseColor,
+          transparent: true,
+          opacity: 0.5,
+        });
+        const line = new THREE.Line(lineGeometry, lineMaterial);
+        scene.add(line);
+        connectionLines.push(line);
       });
     }
-
-    // Easing function.
-    const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
     // Click handler: in normal mode, select a planet; in trade route mode, add it as a stop.
     function onClick(event) {
@@ -237,11 +241,9 @@ const PlanetScene = () => {
         distanceLabels.forEach((label) => document.body.removeChild(label));
         distanceLabels.length = 0;
       }
-
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
       const ray = new THREE.Ray();
       ray.origin.setFromMatrixPosition(camera.matrixWorld);
       ray.direction
@@ -249,11 +251,9 @@ const PlanetScene = () => {
         .unproject(camera)
         .sub(ray.origin)
         .normalize();
-
       let closestPlanet = null;
       let closestDistance = Infinity;
       const targetVector = new THREE.Vector3();
-
       planets.forEach((planetObj) => {
         const planet = planetObj.planet;
         const params = planetObj.params;
@@ -270,10 +270,8 @@ const PlanetScene = () => {
           }
         }
       });
-
       if (closestPlanet) {
         if (tradeRouteMode) {
-          // Allow nodes to be added multiple times, but not consecutively.
           if (
             tradeRouteStops.length > 0 &&
             tradeRouteStops[tradeRouteStops.length - 1] === closestPlanet
@@ -281,19 +279,21 @@ const PlanetScene = () => {
             console.log("Hmph, you cannot add the same planet consecutively!");
             return;
           }
-          // If there's a previous stop, ensure the segment doesn't cross the sun.
           if (tradeRouteStops.length > 0) {
             const lastStop = tradeRouteStops[tradeRouteStops.length - 1];
             if (intersectsSun(lastStop.position, closestPlanet.position)) {
-              console.log("Hmph, trade route segment cannot cross through the sun!");
+              console.log(
+                "Hmph, trade route segment cannot cross through the sun!"
+              );
               return;
             }
           }
           tradeRouteStops.push(closestPlanet);
-          console.log("Added planet to trade route:", closestPlanet.userData.name);
+          console.log(
+            "Added planet to trade route:",
+            closestPlanet.userData.name
+          );
           updateRouteStopsDisplay();
-
-          // Update the drawn route line.
           if (routeLine) {
             scene.remove(routeLine);
             routeLine.geometry.dispose();
@@ -302,20 +302,22 @@ const PlanetScene = () => {
           }
           if (tradeRouteStops.length > 1) {
             const points = tradeRouteStops.map((p) => p.position.clone());
-            const routeGeometry = new THREE.BufferGeometry().setFromPoints(points);
-            const routeMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00 });
+            const routeGeometry = new THREE.BufferGeometry().setFromPoints(
+              points
+            );
+            const routeMaterial = new THREE.LineBasicMaterial({
+              color: 0x00ff00,
+            });
             routeLine = new THREE.Line(routeGeometry, routeMaterial);
             scene.add(routeLine);
           }
         } else {
-          // Normal mode: select a planet.
           selectedPlanet = closestPlanet;
           showConnections(selectedPlanet);
           focusOnPlanet(selectedPlanet);
         }
       }
     }
-
     renderer.domElement.addEventListener("click", onClick);
 
     // Keybinds: T for top-down view, F to refocus.
@@ -324,7 +326,9 @@ const PlanetScene = () => {
         let targetLookAt, targetPosition;
         if (selectedPlanet) {
           targetLookAt = selectedPlanet.position.clone();
-          targetPosition = selectedPlanet.position.clone().add(new THREE.Vector3(0, 0, 150));
+          targetPosition = selectedPlanet.position
+            .clone()
+            .add(new THREE.Vector3(0, 0, 150));
         } else {
           targetLookAt = new THREE.Vector3(0, 0, 0);
           targetPosition = new THREE.Vector3(0, 0, 150);
@@ -334,12 +338,15 @@ const PlanetScene = () => {
         const startTime = clock.getElapsedTime();
         const startPosition = camera.position.clone();
         const startLookAt = controls.target.clone();
-
         const animateTopDown = () => {
           const elapsed = clock.getElapsedTime() - startTime;
           progress = Math.min(elapsed / duration, 1);
-          const easedProgress = easeOutCubic(progress);
-          camera.position.lerpVectors(startPosition, targetPosition, easedProgress);
+          const easedProgress = 1 - Math.pow(1 - progress, 3);
+          camera.position.lerpVectors(
+            startPosition,
+            targetPosition,
+            easedProgress
+          );
           controls.target.lerpVectors(startLookAt, targetLookAt, easedProgress);
           controls.update();
           if (progress < 1) {
@@ -355,20 +362,31 @@ const PlanetScene = () => {
         }
       }
     };
-
     window.addEventListener("keydown", onKeyDown);
 
-    // Generate planet positions in orbits around the sun.
+    // --- Generate planet positions ensuring a minimum distance ---
     const numPlanets = 50;
     const minOrbitRadius = 300;
     const maxOrbitRadius = 1500;
+    const minDistanceBetweenPlanets = 50; // Adjust as needed
     const planetPositions = [];
     for (let i = 0; i < numPlanets; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const radius = minOrbitRadius + Math.random() * (maxOrbitRadius - minOrbitRadius);
-      const x = Math.cos(angle) * radius;
-      const y = Math.sin(angle) * radius;
-      planetPositions.push(new THREE.Vector3(x, y, 0));
+      let candidate;
+      let valid = false;
+      while (!valid) {
+        const angle = Math.random() * Math.PI * 2;
+        const radius =
+          minOrbitRadius + Math.random() * (maxOrbitRadius - minOrbitRadius);
+        candidate = new THREE.Vector3(
+          Math.cos(angle) * radius,
+          Math.sin(angle) * radius,
+          0
+        );
+        valid = planetPositions.every(
+          (pos) => candidate.distanceTo(pos) >= minDistanceBetweenPlanets
+        );
+      }
+      planetPositions.push(candidate);
     }
 
     // Helper: generate a random planet name like "ABC-123".
@@ -378,10 +396,14 @@ const PlanetScene = () => {
       let nameLetters = "";
       let nameNumbers = "";
       for (let i = 0; i < 3; i++) {
-        nameLetters += letters.charAt(Math.floor(Math.random() * letters.length));
+        nameLetters += letters.charAt(
+          Math.floor(Math.random() * letters.length)
+        );
       }
       for (let i = 0; i < 3; i++) {
-        nameNumbers += numbers.charAt(Math.floor(Math.random() * numbers.length));
+        nameNumbers += numbers.charAt(
+          Math.floor(Math.random() * numbers.length)
+        );
       }
       return `${nameLetters}-${nameNumbers}`;
     }
@@ -408,10 +430,19 @@ const PlanetScene = () => {
       context.fillText(message, canvas.width / 2, canvas.height / 2);
       const texture = new THREE.CanvasTexture(canvas);
       texture.needsUpdate = true;
-      const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true });
+      const spriteMaterial = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+      });
       const sprite = new THREE.Sprite(spriteMaterial);
       sprite.scale.set(100, 50, 1);
-      sprite.userData = { canvas, context, fontface, fontsize, borderThickness };
+      sprite.userData = {
+        canvas,
+        context,
+        fontface,
+        fontsize,
+        borderThickness,
+      };
       return sprite;
     }
 
@@ -472,8 +503,11 @@ const PlanetScene = () => {
       color5: { value: new THREE.Color(0.3, 0.2, 0.5) },
     };
 
-    // Put all types into an array.
-    const planetTypes = [earthLikePlanetParams, desertLikePlanetParams, alienLikePlanetParams];
+    const planetTypes = [
+      earthLikePlanetParams,
+      desertLikePlanetParams,
+      alienLikePlanetParams,
+    ];
 
     // Helper: clone planet parameters.
     function clonePlanetParams(params) {
@@ -502,16 +536,17 @@ const PlanetScene = () => {
       return cloned;
     }
 
-    // Create an array to store our planet objects.
     const planets = [];
     for (let i = 0; i < numPlanets; i++) {
-      const randomType = planetTypes[Math.floor(Math.random() * planetTypes.length)];
+      const randomType =
+        planetTypes[Math.floor(Math.random() * planetTypes.length)];
       const planetParams = clonePlanetParams(randomType);
       planetParams.type.value = Math.random() < 0.5 ? 2 : 3;
       const planetObj = Planet({
         scene,
         planetParams,
-        noiseFunctions: document.getElementById("noise-functions")?.innerHTML || "",
+        noiseFunctions:
+          document.getElementById("noise-functions")?.innerHTML || "",
         vertexShader:
           document.getElementById("planet-vert-shader")?.innerHTML ||
           "void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
@@ -532,52 +567,383 @@ const PlanetScene = () => {
       });
       nameLabel.position.set(0, 0, planetParams.radius.value + 15);
       planetObj.planet.add(nameLabel);
-      planets.push({
-        ...planetObj,
-        params: planetParams,
-      });
+      planets.push({ ...planetObj, params: planetParams });
     }
 
-    // ----- DAT.GUI Integration for Trade Route Creation -----
+    // Build the weighted adjacency list.
+    const adjacencyList = {};
+    planets.forEach((planetObj) => {
+      const planet = planetObj.planet;
+      adjacencyList[planet.userData.id] = [];
+    });
+    for (let i = 0; i < planets.length; i++) {
+      for (let j = i + 1; j < planets.length; j++) {
+        const planetA = planets[i].planet;
+        const planetB = planets[j].planet;
+        if (!intersectsSun(planetA.position, planetB.position)) {
+          const distance = planetA.position.distanceTo(planetB.position);
+          adjacencyList[planetA.userData.id].push({
+            planet: planetB,
+            weight: distance,
+          });
+          adjacencyList[planetB.userData.id].push({
+            planet: planetA,
+            weight: distance,
+          });
+        }
+      }
+    }
+
+    // Build a plain graph for pathfinding.
+    const graph = {};
+    Object.keys(adjacencyList).forEach((node) => {
+      graph[node] = {};
+      adjacencyList[node].forEach((item) => {
+        const neighborId = item.planet.userData.id;
+        graph[node][neighborId] = item.weight;
+      });
+    });
+
+    const planetPositionsMap = {};
+    planets.forEach((p) => {
+      planetPositionsMap[p.planet.userData.id.toString()] = p.planet.position;
+    });
+
+    // Set up a fuels map (each planet offers 100 units).
+    const fuels = {};
+    planets.forEach((planetObj) => {
+      const id = planetObj.planet.userData.id;
+      fuels[id] = 200;
+    });
+
+    function fuelAwareAStar(
+      graph,
+      fuels,
+      planetPositions,
+      start,
+      end,
+      fuelCapacity,
+      fuelEfficiency
+    ) {
+      // Penalize refueling stops more (or less)
+      const stopPenalty = 500;
+
+      // The heuristic: straight-line distance (scaled to fuel consumption)
+      function heuristic(node) {
+        const pos1 = planetPositions[node];
+        const pos2 = planetPositions[end];
+        return pos1.distanceTo(pos2) * fuelEfficiency;
+      }
+
+      // Each state has: node, fuelLeft, stops, distance (so far), path (array), and total cost.
+      // The total cost f = g + heuristic + (stops * stopPenalty)
+      const heap = new MinHeap((a, b) => a.cost - b.cost);
+      heap.push({
+        node: start,
+        fuelLeft: fuelCapacity,
+        stops: 0,
+        distance: 0,
+        path: [start],
+        cost: heuristic(start),
+      });
+
+      // visited[stateKey] keeps track of the best (maximum) fuelLeft we’ve seen for a given (node, stops) state.
+      const visited = {};
+
+      while (!heap.isEmpty()) {
+        const current = heap.pop();
+        const { node, fuelLeft, stops, distance, path } = current;
+        if (node === end) {
+          return { distance, path, stops, fuelLeft };
+        }
+        // Create a state key for the current node and stops.
+        const stateKey = `${node}_${stops}`;
+        if (visited[stateKey] !== undefined && visited[stateKey] >= fuelLeft) {
+          continue;
+        }
+        visited[stateKey] = fuelLeft;
+
+        // Explore all neighbors
+        for (const neighbor in graph[node]) {
+          const edgeDistance = graph[node][neighbor];
+          const fuelNeeded = edgeDistance * fuelEfficiency;
+
+          // Option 1: Do not refuel at current node.
+          if (fuelLeft >= fuelNeeded) {
+            const newFuel = fuelLeft - fuelNeeded;
+            const newDistance = distance + edgeDistance;
+            const newCost =
+              newDistance + heuristic(neighbor) + stops * stopPenalty;
+            heap.push({
+              node: neighbor,
+              fuelLeft: newFuel,
+              stops: stops,
+              distance: newDistance,
+              path: path.concat([neighbor]),
+              cost: newCost,
+            });
+          }
+
+          // Option 2: Refuel at the current node (if available) then try the edge.
+          const availableFuel = fuels[node] || 0;
+          if (availableFuel > 0) {
+            const refueled = Math.min(fuelCapacity, fuelLeft + availableFuel);
+            if (refueled >= fuelNeeded) {
+              const newFuel = refueled - fuelNeeded;
+              const newDistance = distance + edgeDistance;
+              const newCost =
+                newDistance + heuristic(neighbor) + (stops + 1) * stopPenalty;
+              heap.push({
+                node: neighbor,
+                fuelLeft: newFuel,
+                stops: stops + 1,
+                distance: newDistance,
+                path: path.concat([neighbor]),
+                cost: newCost,
+              });
+            }
+          }
+        }
+      }
+
+      // If no valid path is found
+      return { distance: Infinity, path: [], stops: -1, fuelLeft: -1 };
+    }
+
+    class MinHeap {
+      constructor(compare) {
+        this.data = [];
+        this.compare = compare;
+      }
+      push(item) {
+        this.data.push(item);
+        this._bubbleUp(this.data.length - 1);
+      }
+      pop() {
+        if (this.data.length === 0) return null;
+        const top = this.data[0];
+        const bottom = this.data.pop();
+        if (this.data.length > 0) {
+          this.data[0] = bottom;
+          this._bubbleDown(0);
+        }
+        return top;
+      }
+      isEmpty() {
+        return this.data.length === 0;
+      }
+      _bubbleUp(index) {
+        while (index > 0) {
+          const parent = Math.floor((index - 1) / 2);
+          if (this.compare(this.data[index], this.data[parent]) < 0) {
+            [this.data[index], this.data[parent]] = [
+              this.data[parent],
+              this.data[index],
+            ];
+            index = parent;
+          } else {
+            break;
+          }
+        }
+      }
+      _bubbleDown(index) {
+        const length = this.data.length;
+        while (true) {
+          let left = 2 * index + 1;
+          let right = 2 * index + 2;
+          let smallest = index;
+          if (
+            left < length &&
+            this.compare(this.data[left], this.data[smallest]) < 0
+          ) {
+            smallest = left;
+          }
+          if (
+            right < length &&
+            this.compare(this.data[right], this.data[smallest]) < 0
+          ) {
+            smallest = right;
+          }
+          if (smallest !== index) {
+            [this.data[index], this.data[smallest]] = [
+              this.data[smallest],
+              this.data[index],
+            ];
+            index = smallest;
+          } else {
+            break;
+          }
+        }
+      }
+    }
+
+    // UPDATED: Standard Dijkstra’s algorithm with fuel simulation.
+    function dijkstraShortestPath(
+      graph,
+      start,
+      end,
+      fuelCapacity,
+      fuelEfficiency
+    ) {
+      const distances = {};
+      const predecessors = {};
+      for (let node in graph) {
+        distances[node] = Infinity;
+        predecessors[node] = null;
+      }
+      distances[start] = 0;
+      let pq = [];
+      pq.push({ distance: 0, node: start });
+      while (pq.length > 0) {
+        pq.sort((a, b) => a.distance - b.distance);
+        const { distance: currentDistance, node: currentNode } = pq.shift();
+        if (currentDistance > distances[currentNode]) continue;
+        for (let neighbor in graph[currentNode]) {
+          const weight = graph[currentNode][neighbor];
+          if (weight * fuelEfficiency > fuelCapacity) continue;
+          const newDist = currentDistance + weight;
+          if (newDist < distances[neighbor]) {
+            distances[neighbor] = newDist;
+            predecessors[neighbor] = currentNode;
+            pq.push({ distance: newDist, node: neighbor });
+          }
+        }
+      }
+      let path = [];
+      let cur = end;
+      if (distances[end] === Infinity) {
+        return { distance: Infinity, path: [], fuelLeft: -1 };
+      }
+      while (cur !== null) {
+        path.push(cur);
+        cur = predecessors[cur];
+      }
+      path.reverse();
+      // Simulate fuel consumption along the path.
+      let fuelLeft = fuelCapacity;
+      for (let i = 0; i < path.length - 1; i++) {
+        const edgeDistance = graph[path[i]][path[i + 1]];
+        fuelLeft -= edgeDistance * fuelEfficiency;
+      }
+      return { distance: distances[end], path, fuelLeft };
+    }
+
+    // Fuel-aware Dijkstra (“Djistras with Fuel”) that prefers high fuel levels.
+    function dijkstraWithFuel(
+      graph,
+      fuels,
+      start,
+      end,
+      fuelCapacity,
+      fuelEfficiency
+    ) {
+      // Priority queue state: { stops, fuelLeft, distance, node, path }
+      let pq = [];
+      pq.push({
+        stops: 0,
+        fuelLeft: fuelCapacity,
+        distance: 0,
+        node: start,
+        path: [start],
+      });
+      let visited = {}; // key: node, value: { stops, fuelLeft }
+      while (pq.length > 0) {
+        pq.sort((a, b) => {
+          const aDeficit = fuelCapacity - a.fuelLeft;
+          const bDeficit = fuelCapacity - b.fuelLeft;
+          if (a.stops !== b.stops) return a.stops - b.stops;
+          if (aDeficit !== bDeficit) return aDeficit - bDeficit;
+          return a.distance - b.distance;
+        });
+        const current = pq.shift();
+        const { stops, fuelLeft, distance, node, path } = current;
+        // Always return the state, even if fuelLeft <= 0.
+        if (node === end) {
+          return { distance, path, stops, fuelLeft };
+        }
+        if (
+          visited[node] &&
+          (visited[node].stops < stops ||
+            (visited[node].stops === stops &&
+              visited[node].fuelLeft >= fuelLeft))
+        ) {
+          continue;
+        }
+        visited[node] = { stops, fuelLeft };
+        for (let neighbor in graph[node]) {
+          const d = graph[node][neighbor];
+          const requiredFuel = d * fuelEfficiency;
+          // Skip if the edge's required fuel exceeds full capacity.
+          if (requiredFuel > fuelCapacity) continue;
+          // Always push a state even if (fuelLeft - requiredFuel) becomes negative.
+          pq.push({
+            stops: stops,
+            fuelLeft: fuelLeft - requiredFuel,
+            distance: distance + d,
+            node: neighbor,
+            path: path.concat([neighbor]),
+          });
+          // Also, consider refueling at the current node.
+          const availableFuel = fuels[node] || 0;
+          const newFuel = Math.min(fuelCapacity, fuelLeft + availableFuel);
+          pq.push({
+            stops: stops + 1,
+            fuelLeft: newFuel - requiredFuel,
+            distance: distance + d,
+            node: neighbor,
+            path: path.concat([neighbor]),
+          });
+        }
+      }
+      return { distance: Infinity, path: [], stops: -1, fuelLeft: -1 };
+    }
+
+    // GUI Integration for Trade Route Creation.
     const guiParams = {
       tradeRouteMode: false,
-      tradeRouteStopDisplay: "", // This will show the stops.
-      loopTradeRoute: false,       // Checkbox to allow the route to loop.
+      tradeRouteStopDisplay: "",
+      loopTradeRoute: false,
       sendTradeShip: function () {
         if (tradeRouteStops.length < 2) {
-          console.log("Hmph, you need at least two stops to form a trade route!");
+          console.log(
+            "Hmph, you need at least two stops to form a trade route!"
+          );
           return;
         }
-        // Build the forward route from the tradeRouteStops.
         let stops = tradeRouteStops.map((p) => p.position.clone());
-        // If the last stop is not the starting planet, retrace the route until the first occurrence of the starting planet.
         if (!stops[stops.length - 1].equals(stops[0])) {
           let retrace = [];
           for (let i = stops.length - 1; i >= 0; i--) {
             retrace.push(stops[i]);
-            if (stops[i].equals(stops[0])) {
-              break;
-            }
+            if (stops[i].equals(stops[0])) break;
           }
           stops = stops.concat(retrace);
         }
-        // Create the trade ship with fuel capacity.
         const tradeShipGeometry = new THREE.SphereGeometry(50, 32, 32);
-        const tradeShipMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-        const tradeShipMesh = new THREE.Mesh(tradeShipGeometry, tradeShipMaterial);
+        const tradeShipMaterial = new THREE.MeshBasicMaterial({
+          color: 0xff0000,
+        });
+        const tradeShipMesh = new THREE.Mesh(
+          tradeShipGeometry,
+          tradeShipMaterial
+        );
         tradeShipMesh.position.copy(stops[0]);
         scene.add(tradeShipMesh);
-        // Create a fuel indicator sprite and attach it above the ship.
-        const fuelSprite = createTextSprite(`Fuel: 300`, { fontsize: 20, fontface: "Arial", borderThickness: 2 });
+        const fuelSprite = createTextSprite(`Fuel: 300`, {
+          fontsize: 20,
+          fontface: "Arial",
+          borderThickness: 2,
+        });
         fuelSprite.position.set(0, 0, 80);
-        tradeShipMesh.add(fuelSprite);
+        // tradeShipMesh.add(fuelSprite);
         const tradeShip = {
           mesh: tradeShipMesh,
           stops: stops,
           currentSegment: 0,
           progress: 0,
-          speed: 50, // Adjust as needed.
-          fuel: 300  // Initial fuel capacity.
+          speed: 50,
+          fuel: 1000,
+          maxFuel: 1000,
         };
         tradeShip.fuelIndicator = fuelSprite;
         activeTradeShips.push(tradeShip);
@@ -596,7 +962,8 @@ const PlanetScene = () => {
     };
 
     const gui = new GUI();
-    gui.add(guiParams, "tradeRouteMode")
+    gui
+      .add(guiParams, "tradeRouteMode")
       .name("Trade Route Mode")
       .onChange((val) => {
         tradeRouteMode = val;
@@ -605,9 +972,110 @@ const PlanetScene = () => {
     gui.add(guiParams, "sendTradeShip").name("Send Trade Ship");
     gui.add(guiParams, "clearTradeRoute").name("Clear Trade Route");
     gui.add(guiParams, "loopTradeRoute").name("Loop Trade Route");
-    gui.add(guiParams, "tradeRouteStopDisplay")
-      .name("Route Stops")
-      .listen();
+    gui.add(guiParams, "tradeRouteStopDisplay").name("Route Stops").listen();
+
+    // GUI for Pathfinding.
+    const pathfindingParams = {
+      sourcePlanet: "",
+      destinationPlanet: "",
+      algorithm: "Shortest Path", // Options: "Shortest Path", "Fuel-Aware"
+      fuelCapacity: 1000,
+      fuelEfficiency: 1, // Fuel consumption per unit distance
+      findPath: function () {
+        if (
+          pathfindingParams.sourcePlanet === "" ||
+          pathfindingParams.destinationPlanet === ""
+        ) {
+          console.log("Hmph, you must select both a source and a destination!");
+          return;
+        }
+        const sourceId = planetNameToId[pathfindingParams.sourcePlanet];
+        const destinationId =
+          planetNameToId[pathfindingParams.destinationPlanet];
+        let result;
+        if (pathfindingParams.algorithm === "Shortest Path") {
+          result = dijkstraShortestPath(
+            graph,
+            sourceId,
+            destinationId,
+            pathfindingParams.fuelCapacity,
+            pathfindingParams.fuelEfficiency
+          );
+        } else {
+          result = fuelAwareAStar(
+            graph,
+            fuels,
+            planetPositionsMap,
+            sourceId,
+            destinationId,
+            pathfindingParams.fuelCapacity,
+            pathfindingParams.fuelEfficiency
+          );
+        }
+        console.log("Path result:", result);
+        if (pathLine) {
+          scene.remove(pathLine);
+          pathLine.geometry.dispose();
+          pathLine.material.dispose();
+          pathLine = null;
+        }
+        // If a valid path was found, display it.
+        if (result.path.length > 0 && result.distance !== Infinity) {
+          const points = [];
+          result.path.forEach((id) => {
+            const planetObj = planets.find(
+              (p) => p.planet.userData.id.toString() === id
+            );
+            if (planetObj) {
+              points.push(planetObj.planet.position.clone());
+            }
+          });
+          const pathGeometry = new THREE.BufferGeometry().setFromPoints(points);
+          // Mark the path in red if the final fuel is <= 0, else in purple.
+          const pathColor = result.fuelLeft <= 0 ? 0xff0000 : 0x800080;
+          const pathMaterial = new THREE.LineBasicMaterial({
+            color: pathColor,
+            linewidth: 4,
+          });
+          pathLine = new THREE.Line(pathGeometry, pathMaterial);
+          scene.add(pathLine);
+        } else {
+          console.log(
+            "No valid path exists (fuel constraints prevent safe traversal)."
+          );
+        }
+      },
+    };
+
+    // Build options for the drop-down menus based on planet names.
+    const planetOptions = planets.map((p) => p.planet.userData.name).sort();
+    const planetNameToId = {};
+    planets.forEach((p) => {
+      planetNameToId[p.planet.userData.name] = p.planet.userData.id.toString();
+    });
+    if (planetOptions.length > 0) {
+      pathfindingParams.sourcePlanet = planetOptions[0];
+      pathfindingParams.destinationPlanet =
+        planetOptions[planetOptions.length - 1];
+    }
+
+    const pathfindingFolder = gui.addFolder("Pathfinding");
+    pathfindingFolder
+      .add(pathfindingParams, "sourcePlanet", planetOptions)
+      .name("Source Planet");
+    pathfindingFolder
+      .add(pathfindingParams, "destinationPlanet", planetOptions)
+      .name("Destination Planet");
+    pathfindingFolder
+      .add(pathfindingParams, "algorithm", ["Shortest Path", "Fuel-Aware"])
+      .name("Algorithm");
+    pathfindingFolder
+      .add(pathfindingParams, "fuelCapacity", 100, 1000, 50)
+      .name("Fuel Capacity");
+    pathfindingFolder
+      .add(pathfindingParams, "fuelEfficiency", 0.1, 5, 0.1)
+      .name("Fuel Efficiency");
+    pathfindingFolder.add(pathfindingParams, "findPath").name("Find Path");
 
     // Mark one random planet as the starter (for normal mode) and animate a camera transition.
     if (planets.length > 0) {
@@ -628,25 +1096,28 @@ const PlanetScene = () => {
       focusedRing = new THREE.Mesh(ringGeometry, ringMaterial);
       focusedRing.rotation.x = Math.PI / 2;
       selectedPlanet.add(focusedRing);
-
       const sideOffset = new THREE.Vector3(200, 0, 50);
       camera.position.copy(selectedPlanet.position.clone().add(sideOffset));
       controls.target.copy(selectedPlanet.position);
       controls.update();
-
-      const targetPosition = selectedPlanet.position.clone().add(new THREE.Vector3(0, 0, 150));
+      const targetPosition = selectedPlanet.position
+        .clone()
+        .add(new THREE.Vector3(0, 0, 150));
       const targetLookAt = selectedPlanet.position.clone();
       let progress = 0;
       const duration = 1.5;
       const startTime = clock.getElapsedTime();
       const startPosition = camera.position.clone();
       const startLookAt = controls.target.clone();
-
       const animateTopDown = () => {
         const elapsed = clock.getElapsedTime() - startTime;
         progress = Math.min(elapsed / duration, 1);
-        const easedProgress = easeOutCubic(progress);
-        camera.position.lerpVectors(startPosition, targetPosition, easedProgress);
+        const easedProgress = 1 - Math.pow(1 - progress, 3);
+        camera.position.lerpVectors(
+          startPosition,
+          targetPosition,
+          easedProgress
+        );
         controls.target.lerpVectors(startLookAt, targetLookAt, easedProgress);
         controls.update();
         if (progress < 1) {
@@ -665,35 +1136,25 @@ const PlanetScene = () => {
       requestAnimationFrame(animateLoop);
       const delta = clock.getDelta();
       const elapsedTime = clock.getElapsedTime();
-
-      // Update each trade ship along its multi-stop route.
       for (let i = activeTradeShips.length - 1; i >= 0; i--) {
         const ship = activeTradeShips[i];
         const currentIndex = ship.currentSegment;
         const startPos = ship.stops[currentIndex];
         const endPos = ship.stops[currentIndex + 1];
         const segmentDistance = startPos.distanceTo(endPos);
-        // const progressIncrement = delta * ship.speed;
         const progressIncrement = (ship.speed * delta) / segmentDistance;
-        // const progressIncrement = (ship.speed * delta) / 0.5
-
-
-        // If this frame completes the segment.
         if (ship.progress + progressIncrement >= 1) {
           const remainingProgress = 1 - ship.progress;
-          const distanceTraveled = segmentDistance * remainingProgress;
-          ship.fuel -= distanceTraveled;
-          
-          if (ship.fuel < 0) {
+          const distanceNeeded = segmentDistance * remainingProgress;
+          if (ship.fuel < distanceNeeded) {
             console.log("Ship ran out of fuel mid-segment!");
             scene.remove(ship.mesh);
             activeTradeShips.splice(i, 1);
             continue;
           }
-
-          // Process arrival: snap to endPos and refuel.
+          ship.fuel -= distanceNeeded;
           ship.mesh.position.copy(endPos);
-          ship.fuel = Math.min(ship.fuel + 50, 300);
+          ship.fuel = Math.min(ship.fuel + 200, ship.maxFuel);
           ship.currentSegment++;
           ship.progress = 0;
           if (ship.currentSegment >= ship.stops.length - 1) {
@@ -706,26 +1167,24 @@ const PlanetScene = () => {
             }
           }
         } else {
-          // Ship does not complete the segment this frame.
           const prevPos = ship.mesh.position.clone();
           ship.progress += progressIncrement;
           ship.mesh.position.lerpVectors(startPos, endPos, ship.progress);
           const distanceTraveled = ship.mesh.position.distanceTo(prevPos);
-          ship.fuel -= distanceTraveled;
-          if (ship.fuel < 0) {
+          if (ship.fuel < distanceTraveled) {
             console.log("Ship ran out of fuel! Trade route aborted.");
             scene.remove(ship.mesh);
             activeTradeShips.splice(i, 1);
             continue;
           }
+          ship.fuel -= distanceTraveled;
         }
-
-        // Update fuel indicator.
         if (ship.fuelIndicator) {
-          updateTextSprite(ship.fuelIndicator, `Fuel: ${ship.fuel.toFixed(0)}`);
+          const fuelDisplay = Math.round(ship.fuel).toString();
+          console.log("Fuel: ", fuelDisplay);
+          updateTextSprite(ship.fuelIndicator, `Fuel: ${fuelDisplay}`);
         }
       }
-
       planets.forEach(({ atmosphere }) => {
         if (
           atmosphere.material &&
@@ -790,4 +1249,3 @@ const PlanetScene = () => {
 };
 
 export default PlanetScene;
-
