@@ -2,8 +2,6 @@ import os
 from pymongo import MongoClient
 from dotenv import load_dotenv
 
-from Planet import Planet
-
 load_dotenv()
 
 # Connection to the database
@@ -49,15 +47,14 @@ def insert(obj, database_name):
 def retrieve_dict(database_name):
     database = dbname[database_name]
     # return [convert for convert in database.find({"ID" : ID}, {"_id": 0})]
-    return database.find({}, {"_id": 0})
 
+    return list(database.find({}))
 
-p1 = Planet(1,2,3,4,5,6,7, ["Rock"])
+def nuke(database_name):
+    print("NUKKINGGGG")
+    testPlanet = dbname[database_name]
+    testPlanet.drop()
 
 # KEEP THIS COMMENTED (it flushes the database)
-testPlanet = dbname["Planet_Test"]
-testPlanet.drop()
-
-insert(p1.to_dict(), "Planet_Test")
-for doc in retrieve_dict("Planet_Test"):
-    print(doc)
+# testPlanet = dbname["Planet_Test"]
+# testPlanet.drop()
