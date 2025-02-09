@@ -84,12 +84,74 @@ const PlanetScene = () => {
     scene.add(sunLight);
 
     // Global variables.
-    let selectedPlanet = null; // This will be set when a planet is clicked.
+    let selectedPlanet = null; // For normal mode selection.
     let focusedRing = null;
     const connectionLines = [];
     const distanceLabels = [];
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
+
+    // --- NEW: Trade Route Mode Variables ---
+    let tradeRouteMode = false; // If true, clicking adds to a trade route.
+    let tradeRouteStops = [];   // Array of planet objects (stops) for the current trade route.
+    let routeLine = null;       // The drawn polyline for the route.
+    const activeTradeShips = []; // Array to hold all trade ships in flight.
+
+    // Helper: update the GUI display of trade route stops.
+    function updateRouteStopsDisplay() {
+      guiParams.tradeRouteStopDisplay = tradeRouteStops
+        .map((p) => p.userData.name)
+        .join(", ");
+    }
+
+    // Modified createTextSprite to store canvas info for updates.
+    function createTextSprite(message, parameters) {
+      parameters = parameters || {};
+      const fontface = parameters.fontface || "Arial";
+      const fontsize = parameters.fontsize || 24;
+      const borderThickness = parameters.borderThickness || 4;
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d");
+      context.font = fontsize + "px " + fontface;
+      const metrics = context.measureText(message);
+      const textWidth = metrics.width;
+      canvas.width = textWidth + borderThickness * 2;
+      canvas.height = fontsize * 1.4 + borderThickness * 2;
+      context.font = fontsize + "px " + fontface;
+      context.fillStyle = "rgba(255, 255, 255, 0.0)";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = "rgba(255, 255, 255, 1.0)";
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillText(message, canvas.width / 2, canvas.height / 2);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.needsUpdate = true;
+      const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true });
+      const sprite = new THREE.Sprite(spriteMaterial);
+      sprite.scale.set(100, 50, 1);
+      // Store canvas data for future updates.
+      sprite.userData = { canvas, context, fontface, fontsize, borderThickness };
+      return sprite;
+    }
+
+    // New: update an existing text sprite.
+    function updateTextSprite(sprite, message) {
+      const { canvas, context, fontface, fontsize, borderThickness } = sprite.userData;
+      context.font = fontsize + "px " + fontface;
+      const metrics = context.measureText(message);
+      const textWidth = metrics.width;
+      canvas.width = textWidth + borderThickness * 2;
+      canvas.height = fontsize * 1.4 + borderThickness * 2;
+      context.font = fontsize + "px " + fontface;
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = "rgba(255, 255, 255, 0.0)";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = "rgba(255, 255, 255, 1.0)";
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillText(message, canvas.width / 2, canvas.height / 2);
+      sprite.material.map.needsUpdate = true;
+    }
 
     // Helper: add a glowing ring to a planet.
     function focusOnPlanet(planet) {
@@ -118,17 +180,63 @@ const PlanetScene = () => {
       planet.add(focusedRing);
     }
 
-    // Click handler: select a planet (this becomes Planet A for the trade route).
-    function onClick(event) {
-      // Clear previous connections.
-      connectionLines.forEach((line) => {
-        scene.remove(line);
-        line.geometry.dispose();
-        line.material.dispose();
+    // Helper function to check if a line between two points intersects the sun.
+    function intersectsSun(p1, p2) {
+      const center = new THREE.Vector3(0, 0, 0);
+      const radius = 100; // Sun's radius
+      const d = new THREE.Vector3().subVectors(p2, p1);
+      const f = new THREE.Vector3().subVectors(p1, center);
+      const a = d.dot(d);
+      const b = 2 * f.dot(d);
+      const c = f.dot(f) - radius * radius;
+      let discriminant = b * b - 4 * a * c;
+      if (discriminant < 0) {
+        return false;
+      }
+      discriminant = Math.sqrt(discriminant);
+      const t1 = (-b - discriminant) / (2 * a);
+      const t2 = (-b + discriminant) / (2 * a);
+      return (t1 >= 0 && t1 <= 1) || (t2 >= 0 && t2 <= 1);
+    }
+
+    // Function to draw connections between planets (used in normal mode).
+    function showConnections(planet) {
+      const baseColor = new THREE.Color(0x00ff88);
+      planets.forEach((otherPlanet) => {
+        if (otherPlanet.planet !== planet) {
+          if (!intersectsSun(planet.position, otherPlanet.planet.position)) {
+            const lineGeometry = new THREE.BufferGeometry().setFromPoints([
+              planet.position,
+              otherPlanet.planet.position,
+            ]);
+            const lineMaterial = new THREE.LineBasicMaterial({
+              color: baseColor,
+              transparent: true,
+              opacity: 0.5,
+            });
+            const line = new THREE.Line(lineGeometry, lineMaterial);
+            scene.add(line);
+            connectionLines.push(line);
+          }
+        }
       });
-      connectionLines.length = 0;
-      distanceLabels.forEach((label) => document.body.removeChild(label));
-      distanceLabels.length = 0;
+    }
+
+    // Easing function.
+    const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+
+    // Click handler: in normal mode, select a planet; in trade route mode, add it as a stop.
+    function onClick(event) {
+      if (!tradeRouteMode) {
+        connectionLines.forEach((line) => {
+          scene.remove(line);
+          line.geometry.dispose();
+          line.material.dispose();
+        });
+        connectionLines.length = 0;
+        distanceLabels.forEach((label) => document.body.removeChild(label));
+        distanceLabels.length = 0;
+      }
 
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -164,37 +272,51 @@ const PlanetScene = () => {
       });
 
       if (closestPlanet) {
-        selectedPlanet = closestPlanet; // Set this as Planet A.
-        showConnections(selectedPlanet);
-        focusOnPlanet(selectedPlanet);
+        if (tradeRouteMode) {
+          // Allow nodes to be added multiple times, but not consecutively.
+          if (
+            tradeRouteStops.length > 0 &&
+            tradeRouteStops[tradeRouteStops.length - 1] === closestPlanet
+          ) {
+            console.log("Hmph, you cannot add the same planet consecutively!");
+            return;
+          }
+          // If there's a previous stop, ensure the segment doesn't cross the sun.
+          if (tradeRouteStops.length > 0) {
+            const lastStop = tradeRouteStops[tradeRouteStops.length - 1];
+            if (intersectsSun(lastStop.position, closestPlanet.position)) {
+              console.log("Hmph, trade route segment cannot cross through the sun!");
+              return;
+            }
+          }
+          tradeRouteStops.push(closestPlanet);
+          console.log("Added planet to trade route:", closestPlanet.userData.name);
+          updateRouteStopsDisplay();
+
+          // Update the drawn route line.
+          if (routeLine) {
+            scene.remove(routeLine);
+            routeLine.geometry.dispose();
+            routeLine.material.dispose();
+            routeLine = null;
+          }
+          if (tradeRouteStops.length > 1) {
+            const points = tradeRouteStops.map((p) => p.position.clone());
+            const routeGeometry = new THREE.BufferGeometry().setFromPoints(points);
+            const routeMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00 });
+            routeLine = new THREE.Line(routeGeometry, routeMaterial);
+            scene.add(routeLine);
+          }
+        } else {
+          // Normal mode: select a planet.
+          selectedPlanet = closestPlanet;
+          showConnections(selectedPlanet);
+          focusOnPlanet(selectedPlanet);
+        }
       }
     }
 
     renderer.domElement.addEventListener("click", onClick);
-
-    // Draw connection lines (simple).
-    function showConnections(planet) {
-      const baseColor = new THREE.Color(0x00ff88);
-      planets.forEach((otherPlanet) => {
-        if (otherPlanet.planet !== planet) {
-          const lineGeometry = new THREE.BufferGeometry().setFromPoints([
-            planet.position,
-            otherPlanet.planet.position,
-          ]);
-          const lineMaterial = new THREE.LineBasicMaterial({
-            color: baseColor,
-            transparent: true,
-            opacity: 0.5,
-          });
-          const line = new THREE.Line(lineGeometry, lineMaterial);
-          scene.add(line);
-          connectionLines.push(line);
-        }
-      });
-    }
-
-    // Easing function.
-    const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
 
     // Keybinds: T for top-down view, F to refocus.
     const onKeyDown = (event) => {
@@ -202,9 +324,7 @@ const PlanetScene = () => {
         let targetLookAt, targetPosition;
         if (selectedPlanet) {
           targetLookAt = selectedPlanet.position.clone();
-          targetPosition = selectedPlanet.position
-            .clone()
-            .add(new THREE.Vector3(0, 0, 150));
+          targetPosition = selectedPlanet.position.clone().add(new THREE.Vector3(0, 0, 150));
         } else {
           targetLookAt = new THREE.Vector3(0, 0, 0);
           targetPosition = new THREE.Vector3(0, 0, 150);
@@ -251,7 +371,7 @@ const PlanetScene = () => {
       planetPositions.push(new THREE.Vector3(x, y, 0));
     }
 
-    // Helper function to generate a random planet name in the form "ABC-123".
+    // Helper: generate a random planet name like "ABC-123".
     function generatePlanetName() {
       const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
       const numbers = "0123456789";
@@ -266,7 +386,7 @@ const PlanetScene = () => {
       return `${nameLetters}-${nameNumbers}`;
     }
 
-    // Helper function to create a text sprite for planet names.
+    // Helper: create a text sprite for planet names.
     function createTextSprite(message, parameters) {
       parameters = parameters || {};
       const fontface = parameters.fontface || "Arial";
@@ -277,15 +397,11 @@ const PlanetScene = () => {
       context.font = fontsize + "px " + fontface;
       const metrics = context.measureText(message);
       const textWidth = metrics.width;
-      // Set canvas size.
       canvas.width = textWidth + borderThickness * 2;
       canvas.height = fontsize * 1.4 + borderThickness * 2;
-      // Reset font after resizing.
       context.font = fontsize + "px " + fontface;
-      // Optional: draw a transparent background.
       context.fillStyle = "rgba(255, 255, 255, 0.0)";
       context.fillRect(0, 0, canvas.width, canvas.height);
-      // Draw the text.
       context.fillStyle = "rgba(255, 255, 255, 1.0)";
       context.textAlign = "center";
       context.textBaseline = "middle";
@@ -294,8 +410,8 @@ const PlanetScene = () => {
       texture.needsUpdate = true;
       const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true });
       const sprite = new THREE.Sprite(spriteMaterial);
-      // Adjust scale as needed.
       sprite.scale.set(100, 50, 1);
+      sprite.userData = { canvas, context, fontface, fontsize, borderThickness };
       return sprite;
     }
 
@@ -359,7 +475,7 @@ const PlanetScene = () => {
     // Put all types into an array.
     const planetTypes = [earthLikePlanetParams, desertLikePlanetParams, alienLikePlanetParams];
 
-    // Helper function to clone planet parameters.
+    // Helper: clone planet parameters.
     function clonePlanetParams(params) {
       const cloned = {};
       for (const key in params) {
@@ -389,10 +505,8 @@ const PlanetScene = () => {
     // Create an array to store our planet objects.
     const planets = [];
     for (let i = 0; i < numPlanets; i++) {
-      // Randomly pick a type for this planet.
       const randomType = planetTypes[Math.floor(Math.random() * planetTypes.length)];
       const planetParams = clonePlanetParams(randomType);
-      // Optionally, you can still randomly assign a type value if needed.
       planetParams.type.value = Math.random() < 0.5 ? 2 : 3;
       const planetObj = Planet({
         scene,
@@ -407,80 +521,98 @@ const PlanetScene = () => {
       });
       const pos = planetPositions[i];
       planetObj.planet.position.set(pos.x, pos.y, 0);
-
-      // Generate a unique id and a random name (e.g. "ABC-123") for the planet.
-      const planetId = i; // Using loop index as the id.
+      const planetId = i;
       const planetName = generatePlanetName();
       planetObj.planet.userData.id = planetId;
       planetObj.planet.userData.name = planetName;
-
-      // Create a text sprite for the planet's name and position it above the planet.
       const nameLabel = createTextSprite(planetName, {
-        fontsize: 24,
+        fontsize: 12,
         fontface: "Arial",
         borderThickness: 1,
       });
-      // Adjust the label's position to be above the planet.
       nameLabel.position.set(0, 0, planetParams.radius.value + 15);
       planetObj.planet.add(nameLabel);
-
       planets.push({
         ...planetObj,
         params: planetParams,
       });
     }
 
-    // ----- DAT.GUI Integration for Giant Ball Launch -----
-    // Planet A is the selected planet from the click handler.
-    // We'll only allow selection of Planet B via the GUI.
-    let activeGiantBall = null; // Holds our giant ball data if one is active.
+    // ----- DAT.GUI Integration for Trade Route Creation -----
     const guiParams = {
-      planetB: planets.length > 1 ? planets[1].planet.userData.name : "",
-      sendGiantBall: function () {
-        // Planet A is the selected planet from the click.
-        if (!selectedPlanet) {
-          console.log("Hmph, no source planet selected! Click on a planet first.");
+      tradeRouteMode: false,
+      tradeRouteStopDisplay: "", // This will show the stops.
+      loopTradeRoute: false,       // Checkbox to allow the route to loop.
+      sendTradeShip: function () {
+        if (tradeRouteStops.length < 2) {
+          console.log("Hmph, you need at least two stops to form a trade route!");
           return;
         }
-        // Find the planet object for Planet B based on the selected name.
-        const planetBObj = planets.find(
-          (p) => p.planet.userData.name === guiParams.planetB
-        );
-        if (!planetBObj) {
-          console.log("Hmph, invalid target planet selection!");
-          return;
+        // Build the forward route from the tradeRouteStops.
+        let stops = tradeRouteStops.map((p) => p.position.clone());
+        // If the last stop is not the starting planet, retrace the route until the first occurrence of the starting planet.
+        if (!stops[stops.length - 1].equals(stops[0])) {
+          let retrace = [];
+          for (let i = stops.length - 1; i >= 0; i--) {
+            retrace.push(stops[i]);
+            if (stops[i].equals(stops[0])) {
+              break;
+            }
+          }
+          stops = stops.concat(retrace);
         }
-        // Create a giant ball (adjust size and material as desired).
-        const giantBallGeometry = new THREE.SphereGeometry(50, 32, 32);
-        const giantBallMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-        const giantBallMesh = new THREE.Mesh(giantBallGeometry, giantBallMaterial);
-        // Start the giant ball at Planet A's position.
-        giantBallMesh.position.copy(selectedPlanet.position);
-        scene.add(giantBallMesh);
-        // Set up animation data.
-        activeGiantBall = {
-          mesh: giantBallMesh,
-          start: selectedPlanet.position.clone(),
-          end: planetBObj.planet.position.clone(),
+        // Create the trade ship with fuel capacity.
+        const tradeShipGeometry = new THREE.SphereGeometry(50, 32, 32);
+        const tradeShipMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const tradeShipMesh = new THREE.Mesh(tradeShipGeometry, tradeShipMaterial);
+        tradeShipMesh.position.copy(stops[0]);
+        scene.add(tradeShipMesh);
+        // Create a fuel indicator sprite and attach it above the ship.
+        const fuelSprite = createTextSprite(`Fuel: 300`, { fontsize: 20, fontface: "Arial", borderThickness: 2 });
+        fuelSprite.position.set(0, 0, 80);
+        tradeShipMesh.add(fuelSprite);
+        const tradeShip = {
+          mesh: tradeShipMesh,
+          stops: stops,
+          currentSegment: 0,
           progress: 0,
-          speed: 0.5, // Adjust speed if needed.
+          speed: 50, // Adjust as needed.
+          fuel: 300  // Initial fuel capacity.
         };
+        tradeShip.fuelIndicator = fuelSprite;
+        activeTradeShips.push(tradeShip);
+      },
+      clearTradeRoute: function () {
+        tradeRouteStops = [];
+        if (routeLine) {
+          scene.remove(routeLine);
+          routeLine.geometry.dispose();
+          routeLine.material.dispose();
+          routeLine = null;
+        }
+        updateRouteStopsDisplay();
+        console.log("Trade route cleared.");
       },
     };
 
-    // Create the dat.GUI interface.
     const gui = new GUI();
-    // Only add the dropdown for Planet B.
-    const planetNames = planets.map((p) => p.planet.userData.name);
-    gui.add(guiParams, "planetB", planetNames).name("Planet B");
-    gui.add(guiParams, "sendGiantBall").name("Send Giant Ball");
-    // --------------------------------------------------------
+    gui.add(guiParams, "tradeRouteMode")
+      .name("Trade Route Mode")
+      .onChange((val) => {
+        tradeRouteMode = val;
+        console.log("Trade Route Mode is now " + (val ? "ON" : "OFF"));
+      });
+    gui.add(guiParams, "sendTradeShip").name("Send Trade Ship");
+    gui.add(guiParams, "clearTradeRoute").name("Clear Trade Route");
+    gui.add(guiParams, "loopTradeRoute").name("Loop Trade Route");
+    gui.add(guiParams, "tradeRouteStopDisplay")
+      .name("Route Stops")
+      .listen();
 
-    // Mark one random planet as the starter planet and animate a rotation transition.
+    // Mark one random planet as the starter (for normal mode) and animate a camera transition.
     if (planets.length > 0) {
       const randomIndex = Math.floor(Math.random() * planets.length);
       selectedPlanet = planets[randomIndex].planet;
-      // Add the glowing ring.
       const planetData = planets[randomIndex];
       const planetRadius = planetData ? planetData.params.radius.value : 20;
       const innerRadius = planetRadius * 1.1;
@@ -497,13 +629,11 @@ const PlanetScene = () => {
       focusedRing.rotation.x = Math.PI / 2;
       selectedPlanet.add(focusedRing);
 
-      // Set the camera's starting position to be to the side of the starter planet.
-      const sideOffset = new THREE.Vector3(200, 0, 50); // Adjust this offset as needed.
+      const sideOffset = new THREE.Vector3(200, 0, 50);
       camera.position.copy(selectedPlanet.position.clone().add(sideOffset));
       controls.target.copy(selectedPlanet.position);
       controls.update();
 
-      // Animate the camera to rotate into a top-down view of the starter planet.
       const targetPosition = selectedPlanet.position.clone().add(new THREE.Vector3(0, 0, 150));
       const targetLookAt = selectedPlanet.position.clone();
       let progress = 0;
@@ -522,7 +652,6 @@ const PlanetScene = () => {
         if (progress < 1) {
           requestAnimationFrame(animateTopDown);
         } else {
-          // End of animation: remove loading screen.
           setLoading(false);
         }
       };
@@ -537,17 +666,63 @@ const PlanetScene = () => {
       const delta = clock.getDelta();
       const elapsedTime = clock.getElapsedTime();
 
-      // Update giant ball animation if one is active.
-      if (activeGiantBall) {
-        activeGiantBall.progress += delta * activeGiantBall.speed;
-        activeGiantBall.mesh.position.lerpVectors(
-          activeGiantBall.start,
-          activeGiantBall.end,
-          activeGiantBall.progress
-        );
-        if (activeGiantBall.progress >= 1) {
-          scene.remove(activeGiantBall.mesh);
-          activeGiantBall = null;
+      // Update each trade ship along its multi-stop route.
+      for (let i = activeTradeShips.length - 1; i >= 0; i--) {
+        const ship = activeTradeShips[i];
+        const currentIndex = ship.currentSegment;
+        const startPos = ship.stops[currentIndex];
+        const endPos = ship.stops[currentIndex + 1];
+        const segmentDistance = startPos.distanceTo(endPos);
+        // const progressIncrement = delta * ship.speed;
+        const progressIncrement = (ship.speed * delta) / segmentDistance;
+        // const progressIncrement = (ship.speed * delta) / 0.5
+
+
+        // If this frame completes the segment.
+        if (ship.progress + progressIncrement >= 1) {
+          const remainingProgress = 1 - ship.progress;
+          const distanceTraveled = segmentDistance * remainingProgress;
+          ship.fuel -= distanceTraveled;
+          
+          if (ship.fuel < 0) {
+            console.log("Ship ran out of fuel mid-segment!");
+            scene.remove(ship.mesh);
+            activeTradeShips.splice(i, 1);
+            continue;
+          }
+
+          // Process arrival: snap to endPos and refuel.
+          ship.mesh.position.copy(endPos);
+          ship.fuel = Math.min(ship.fuel + 50, 300);
+          ship.currentSegment++;
+          ship.progress = 0;
+          if (ship.currentSegment >= ship.stops.length - 1) {
+            if (guiParams.loopTradeRoute) {
+              ship.currentSegment = 0;
+            } else {
+              scene.remove(ship.mesh);
+              activeTradeShips.splice(i, 1);
+              continue;
+            }
+          }
+        } else {
+          // Ship does not complete the segment this frame.
+          const prevPos = ship.mesh.position.clone();
+          ship.progress += progressIncrement;
+          ship.mesh.position.lerpVectors(startPos, endPos, ship.progress);
+          const distanceTraveled = ship.mesh.position.distanceTo(prevPos);
+          ship.fuel -= distanceTraveled;
+          if (ship.fuel < 0) {
+            console.log("Ship ran out of fuel! Trade route aborted.");
+            scene.remove(ship.mesh);
+            activeTradeShips.splice(i, 1);
+            continue;
+          }
+        }
+
+        // Update fuel indicator.
+        if (ship.fuelIndicator) {
+          updateTextSprite(ship.fuelIndicator, `Fuel: ${ship.fuel.toFixed(0)}`);
         }
       }
 
@@ -559,7 +734,6 @@ const PlanetScene = () => {
         ) {
           atmosphere.material.uniforms.time.value = elapsedTime;
         }
-        // Slowly rotate each atmosphere.
         atmosphere.rotation.y += 0.0009;
       });
       controls.update();
@@ -585,7 +759,6 @@ const PlanetScene = () => {
         containerRef.current.removeChild(renderer.domElement);
         containerRef.current.removeChild(stats.dom);
       }
-      // Destroy the GUI (not that I care if you forget it).
       gui.destroy();
     };
   }, []);
@@ -617,3 +790,4 @@ const PlanetScene = () => {
 };
 
 export default PlanetScene;
+
