@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spaced Network of Circles</title>
+    <style>
+        * { margin: 0; padding: 0; overflow: hidden; }
+        canvas { display: block; background: black; }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d");
+
+        let nodes = [];
+        let firstNode = true;
+        const nodeCount = 5; // Adjust as needed
+        const minDistance = 80; // Minimum spacing between nodes
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            //generateNodes();
+            //draw();
+        }
+
+        function generateNodes() {
+            nodes = [];
+            while (nodes.length < nodeCount) {
+                let newNode = {
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    radius: 8,
+                    weight: Math.floor(Math.random() * 10) + 1
+                };
+
+                // Check if the new node is far enough from all existing nodes
+                let valid = nodes.every(node => distance(node, newNode) >= minDistance);
+
+                if (valid) {
+                    nodes.push(newNode);
+                }
+            }
+        }
+
+        function distance(a, b) {
+            return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw connections
+            ctx.strokeStyle = "white";
+            ctx.lineWidth = 1;
+            for (let i = 0; i < nodes.length; i++) {
+                for (let j = i + 1; j < nodes.length; j++) {
+                    ctx.beginPath();
+                    ctx.moveTo(nodes[i].x, nodes[i].y);
+                    ctx.lineTo(nodes[j].x, nodes[j].y);
+                    ctx.stroke();
+                }
+            }
+
+            ctx.font = "16px Arial";
+
+            // Draw nodes
+            for (let node of nodes) {
+                ctx.fillStyle = "cyan";
+                if (node == nodes[0]) {
+                    ctx.fillStyle = "red"
+                }
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Draw weight
+                ctx.fillStyle = "white";
+                ctx.fillText(node.weight, node.x + 12, node.y - 12);
+            }
+        }
+
+        function sendNodePositionsToServer() {
+            // Prepare the data (array of nodes with x and y positions)
+            const nodeData = nodes.map(node => ({
+                x: node.x,
+                y: node.y
+            }));
+
+            // Send the data via a POST request
+            fetch('http://localhost:8080/submit-nodes', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(nodeData) // Convert nodeData to JSON
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Server Response:', data);
+            })
+            .catch(error => {
+                console.error('Error sending data to server:', error);
+            });
+        }
+
+        //window.addEventListener("resize", resizeCanvas);
+        resizeCanvas();
+        generateNodes();
+        draw();
+        sendNodePositionsToServer();
+    </script>
+</body>
+</html>
