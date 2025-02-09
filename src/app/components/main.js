@@ -26,7 +26,6 @@ const PlanetScene = () => {
     // Create renderer and attach it.
     const renderer = new THREE.WebGLRenderer();
     renderer.outputEncoding = THREE.sRGBEncoding;
-
     renderer.setSize(window.innerWidth, window.innerHeight);
     containerRef.current.appendChild(renderer.domElement);
 
@@ -44,7 +43,7 @@ const PlanetScene = () => {
     scene.up.set(0, 0, 1);
 
     const ambientLight = new THREE.AmbientLight(0xffffff, 2);
-scene.add(ambientLight);
+    scene.add(ambientLight);
 
     // Set up camera.
     const camera = new THREE.PerspectiveCamera(
@@ -308,9 +307,7 @@ scene.add(ambientLight);
           }
           if (tradeRouteStops.length > 1) {
             const points = tradeRouteStops.map((p) => p.position.clone());
-            const routeGeometry = new THREE.BufferGeometry().setFromPoints(
-              points
-            );
+            const routeGeometry = new THREE.BufferGeometry().setFromPoints(points);
             const routeMaterial = new THREE.LineBasicMaterial({
               color: 0x00ff00,
             });
@@ -348,16 +345,13 @@ scene.add(ambientLight);
           const elapsed = clock.getElapsedTime() - startTime;
           progress = Math.min(elapsed / duration, 1);
           const easedProgress = 1 - Math.pow(1 - progress, 3);
-          camera.position.lerpVectors(
-            startPosition,
-            targetPosition,
-            easedProgress
-          );
+          camera.position.lerpVectors(startPosition, targetPosition, easedProgress);
           controls.target.lerpVectors(startLookAt, targetLookAt, easedProgress);
           controls.update();
           if (progress < 1) {
             requestAnimationFrame(animateTopDown);
-          }
+          } 
+          // DON'T automatically call setLoading(false); let the user click "Start Game" instead!
         };
         animateTopDown();
       } else if (event.key === "f" || event.key === "F") {
@@ -420,46 +414,39 @@ scene.add(ambientLight);
       const fontface = parameters.fontface || "Arial";
       const fontsize = parameters.fontsize || 24;
       const borderThickness = parameters.borderThickness || 4;
-      const backgroundColor = parameters.backgroundColor || "rgba(0, 0, 0, 0.6)"; // Semi-transparent black
-      const textColor = parameters.textColor || "rgba(255, 255, 255, 1.0)"; // White text
+      const backgroundColor = parameters.backgroundColor || "rgba(0, 0, 0, 0.6)";
+      const textColor = parameters.textColor || "rgba(255, 255, 255, 1.0)";
     
       const canvas = document.createElement("canvas");
       const context = canvas.getContext("2d");
     
-      // Set font
       context.font = `${fontsize}px ${fontface}`;
       const metrics = context.measureText(message);
       const textWidth = metrics.width;
     
-      // Set canvas size based on text width & height
-      canvas.width = textWidth + borderThickness * 10; // Extra padding
-      canvas.height = fontsize * 1.8 + borderThickness * 4; // Extra padding
+      canvas.width = textWidth + borderThickness * 10;
+      canvas.height = fontsize * 1.8 + borderThickness * 4;
     
-      // Draw background rectangle
       context.fillStyle = backgroundColor;
       context.fillRect(0, 0, canvas.width, canvas.height);
     
-      // Draw text
       context.fillStyle = textColor;
       context.textAlign = "center";
       context.textBaseline = "middle";
       context.font = `${fontsize}px ${fontface}`;
       context.fillText(message, canvas.width / 2, canvas.height / 2);
     
-      // Convert canvas to texture
       const texture = new THREE.CanvasTexture(canvas);
       texture.needsUpdate = true;
     
-      // Create sprite
       const spriteMaterial = new THREE.SpriteMaterial({
         map: texture,
         transparent: true,
       });
     
       const sprite = new THREE.Sprite(spriteMaterial);
-      sprite.scale.set(100, 50, 1); // Adjust size as needed
+      sprite.scale.set(100, 50, 1);
     
-      // Store canvas data for future updates
       sprite.userData = {
         canvas,
         context,
@@ -473,7 +460,6 @@ scene.add(ambientLight);
       return sprite;
     }
     
-
     // Create parameter sets for different planet types.
     const baselinePlanetParams = {
       type: { value: 2 },
@@ -574,9 +560,7 @@ scene.add(ambientLight);
       planetParams.type.value = Math.random() < 0.5 ? 2 : 3;
       
       // Randomly generate amplitude and lacunarity.
-      // Amplitude will be a random number between 1 and 5.
       planetParams.amplitude.value = Math.random() * 0.5 + 1;
-            // Lacunarity will be a random number between 1.5 and 3.
       planetParams.lacunarity.value = Math.random() * 1.5 + 1.5;
       
       // Add atmosphere condition randomly.
@@ -621,7 +605,6 @@ scene.add(ambientLight);
       planets.push({ ...planetObj, params: planetParams });
     }
     
-
     // Build the weighted adjacency list.
     const adjacencyList = {};
     planets.forEach((planetObj) => {
@@ -661,7 +644,7 @@ scene.add(ambientLight);
       planetPositionsMap[p.planet.userData.id.toString()] = p.planet.position;
     });
 
-    // Set up a fuels map (each planet offers 100 units).
+    // Set up a fuels map (each planet offers 200 units).
     const fuels = {};
     planets.forEach((planetObj) => {
       const id = planetObj.planet.userData.id;
@@ -677,18 +660,12 @@ scene.add(ambientLight);
       fuelCapacity,
       fuelEfficiency
     ) {
-      // Penalize refueling stops more (or less)
       const stopPenalty = 500;
-
-      // The heuristic: straight-line distance (scaled to fuel consumption)
       function heuristic(node) {
         const pos1 = planetPositions[node];
         const pos2 = planetPositions[end];
         return pos1.distanceTo(pos2) * fuelEfficiency;
       }
-
-      // Each state has: node, fuelLeft, stops, distance (so far), path (array), and total cost.
-      // The total cost f = g + heuristic + (stops * stopPenalty)
       const heap = new MinHeap((a, b) => a.cost - b.cost);
       heap.push({
         node: start,
@@ -698,29 +675,21 @@ scene.add(ambientLight);
         path: [start],
         cost: heuristic(start),
       });
-
-      // visited[stateKey] keeps track of the best (maximum) fuelLeft we’ve seen for a given (node, stops) state.
       const visited = {};
-
       while (!heap.isEmpty()) {
         const current = heap.pop();
         const { node, fuelLeft, stops, distance, path } = current;
         if (node === end) {
           return { distance, path, stops, fuelLeft };
         }
-        // Create a state key for the current node and stops.
         const stateKey = `${node}_${stops}`;
         if (visited[stateKey] !== undefined && visited[stateKey] >= fuelLeft) {
           continue;
         }
         visited[stateKey] = fuelLeft;
-
-        // Explore all neighbors
         for (const neighbor in graph[node]) {
           const edgeDistance = graph[node][neighbor];
           const fuelNeeded = edgeDistance * fuelEfficiency;
-
-          // Option 1: Do not refuel at current node.
           if (fuelLeft >= fuelNeeded) {
             const newFuel = fuelLeft - fuelNeeded;
             const newDistance = distance + edgeDistance;
@@ -735,8 +704,6 @@ scene.add(ambientLight);
               cost: newCost,
             });
           }
-
-          // Option 2: Refuel at the current node (if available) then try the edge.
           const availableFuel = fuels[node] || 0;
           if (availableFuel > 0) {
             const refueled = Math.min(fuelCapacity, fuelLeft + availableFuel);
@@ -757,8 +724,6 @@ scene.add(ambientLight);
           }
         }
       }
-
-      // If no valid path is found
       return { distance: Infinity, path: [], stops: -1, fuelLeft: -1 };
     }
 
@@ -829,7 +794,6 @@ scene.add(ambientLight);
       }
     }
 
-    // UPDATED: Standard Dijkstra’s algorithm with fuel simulation.
     function dijkstraShortestPath(
       graph,
       start,
@@ -871,7 +835,6 @@ scene.add(ambientLight);
         cur = predecessors[cur];
       }
       path.reverse();
-      // Simulate fuel consumption along the path.
       let fuelLeft = fuelCapacity;
       for (let i = 0; i < path.length - 1; i++) {
         const edgeDistance = graph[path[i]][path[i + 1]];
@@ -880,7 +843,6 @@ scene.add(ambientLight);
       return { distance: distances[end], path, fuelLeft };
     }
 
-    // Fuel-aware Dijkstra (“Djistras with Fuel”) that prefers high fuel levels.
     function dijkstraWithFuel(
       graph,
       fuels,
@@ -889,7 +851,6 @@ scene.add(ambientLight);
       fuelCapacity,
       fuelEfficiency
     ) {
-      // Priority queue state: { stops, fuelLeft, distance, node, path }
       let pq = [];
       pq.push({
         stops: 0,
@@ -898,7 +859,7 @@ scene.add(ambientLight);
         node: start,
         path: [start],
       });
-      let visited = {}; // key: node, value: { stops, fuelLeft }
+      let visited = {};
       while (pq.length > 0) {
         pq.sort((a, b) => {
           const aDeficit = fuelCapacity - a.fuelLeft;
@@ -909,7 +870,6 @@ scene.add(ambientLight);
         });
         const current = pq.shift();
         const { stops, fuelLeft, distance, node, path } = current;
-        // Always return the state, even if fuelLeft <= 0.
         if (node === end) {
           return { distance, path, stops, fuelLeft };
         }
@@ -925,9 +885,7 @@ scene.add(ambientLight);
         for (let neighbor in graph[node]) {
           const d = graph[node][neighbor];
           const requiredFuel = d * fuelEfficiency;
-          // Skip if the edge's required fuel exceeds full capacity.
           if (requiredFuel > fuelCapacity) continue;
-          // Always push a state even if (fuelLeft - requiredFuel) becomes negative.
           pq.push({
             stops: stops,
             fuelLeft: fuelLeft - requiredFuel,
@@ -935,7 +893,6 @@ scene.add(ambientLight);
             node: neighbor,
             path: path.concat([neighbor]),
           });
-          // Also, consider refueling at the current node.
           const availableFuel = fuels[node] || 0;
           const newFuel = Math.min(fuelCapacity, fuelLeft + availableFuel);
           pq.push({
@@ -957,28 +914,17 @@ scene.add(ambientLight);
       loopTradeRoute: false,
       sendTradeShip: function () {
         if (tradeRouteStops.length < 2) {
-          console.log(
-            "Hmph, you need at least two stops to form a trade route!"
-          );
+          console.log("Hmph, you need at least two stops to form a trade route!");
           return;
         }
-
-        // Load the spaceship model
         const loader = new GLTFLoader();
         loader.load(
           "space_ship.glb",
           (gltf) => {
             const spaceship = gltf.scene;
-            spaceship.scale.set(5, 5, 5); // Adjust scale if needed
+            spaceship.scale.set(5, 5, 5);
             spaceship.position.copy(tradeRouteStops[0].position);
-
-            // Adjust rotation to align with movement
             spaceship.rotation.set(0, Math.PI, 0);
-
-            // Create a point light source for the spaceship
-            // const shipLight = new THREE.PointLight(0x00ffff, 10, 1000);
-            // shipLight.position.set(0, 5, 5); // Slightly above the spaceship
-
             const shipLight = new THREE.SpotLight(
               0xffffff,
               10,
@@ -988,15 +934,11 @@ scene.add(ambientLight);
             );
             shipLight.position.set(0, 5, 10);
             shipLight.target = spaceship;
-            shipLight.castShadow = true; // Enable shadows for depth
+            shipLight.castShadow = true;
             spaceship.add(shipLight);
-
-            // Attach the light to the spaceship model
             spaceship.add(shipLight);
-
             gltf.scene.traverse((child) => {
               if (child.isMesh && child.material) {
-                // This ensures the material is updated and visible.
                 child.material.side = THREE.DoubleSide;
                 child.material.needsUpdate = true;
                 if (child.material.emissive) {
@@ -1004,17 +946,13 @@ scene.add(ambientLight);
                 }
               }
             });
-            
-
             scene.add(spaceship);
-
             const fuelSprite = createTextSprite(`Fuel: 300`, {
               fontsize: 20,
               fontface: "Arial",
               borderThickness: 2,
             });
             fuelSprite.position.set(0, 0, 80);
-
             const tradeShip = {
               mesh: spaceship,
               stops: tradeRouteStops.map((p) => p.position.clone()),
@@ -1024,9 +962,8 @@ scene.add(ambientLight);
               fuel: 1000,
               maxFuel: 1000,
               fuelIndicator: fuelSprite,
-              light: shipLight, // Store light reference (optional)
+              light: shipLight,
             };
-
             activeTradeShips.push(tradeShip);
           },
           undefined,
@@ -1065,9 +1002,9 @@ scene.add(ambientLight);
     const pathfindingParams = {
       sourcePlanet: "",
       destinationPlanet: "",
-      algorithm: "Shortest Path", // Options: "Shortest Path", "Fuel-Aware"
+      algorithm: "Shortest Path",
       fuelCapacity: 1000,
-      fuelEfficiency: 1, // Fuel consumption per unit distance
+      fuelEfficiency: 1,
       findPath: function () {
         if (
           pathfindingParams.sourcePlanet === "" ||
@@ -1077,8 +1014,7 @@ scene.add(ambientLight);
           return;
         }
         const sourceId = planetNameToId[pathfindingParams.sourcePlanet];
-        const destinationId =
-          planetNameToId[pathfindingParams.destinationPlanet];
+        const destinationId = planetNameToId[pathfindingParams.destinationPlanet];
         let result;
         if (pathfindingParams.algorithm === "Shortest Path") {
           result = dijkstraShortestPath(
@@ -1106,7 +1042,6 @@ scene.add(ambientLight);
           pathLine.material.dispose();
           pathLine = null;
         }
-        // If a valid path was found, display it.
         if (result.path.length > 0 && result.distance !== Infinity) {
           const points = [];
           result.path.forEach((id) => {
@@ -1118,7 +1053,6 @@ scene.add(ambientLight);
             }
           });
           const pathGeometry = new THREE.BufferGeometry().setFromPoints(points);
-          // Mark the path in red if the final fuel is <= 0, else in purple.
           const pathColor = result.fuelLeft <= 0 ? 0xff0000 : 0x800080;
           const pathMaterial = new THREE.LineBasicMaterial({
             color: pathColor,
@@ -1134,7 +1068,6 @@ scene.add(ambientLight);
       },
     };
 
-    // Build options for the drop-down menus based on planet names.
     const planetOptions = planets.map((p) => p.planet.userData.name).sort();
     const planetNameToId = {};
     planets.forEach((p) => {
@@ -1164,7 +1097,7 @@ scene.add(ambientLight);
       .name("Fuel Efficiency");
     pathfindingFolder.add(pathfindingParams, "findPath").name("Find Path");
 
-    // Mark one random planet as the starter (for normal mode) and animate a camera transition.
+    // Mark one random planet as the starter and animate a camera transition.
     if (planets.length > 0) {
       const randomIndex = Math.floor(Math.random() * planets.length);
       selectedPlanet = planets[randomIndex].planet;
@@ -1200,18 +1133,13 @@ scene.add(ambientLight);
         const elapsed = clock.getElapsedTime() - startTime;
         progress = Math.min(elapsed / duration, 1);
         const easedProgress = 1 - Math.pow(1 - progress, 3);
-        camera.position.lerpVectors(
-          startPosition,
-          targetPosition,
-          easedProgress
-        );
+        camera.position.lerpVectors(startPosition, targetPosition, easedProgress);
         controls.target.lerpVectors(startLookAt, targetLookAt, easedProgress);
         controls.update();
         if (progress < 1) {
           requestAnimationFrame(animateTopDown);
-        } else {
-          setLoading(false);
         }
+        // DON'T call setLoading(false) automatically here.
       };
       animateTopDown();
     } else {
@@ -1319,16 +1247,44 @@ scene.add(ambientLight);
             left: 0,
             width: "100%",
             height: "100%",
-            background: "rgba(0,0,0,0.8)",
+            background: "rgba(0,0,0,0.95)",
             display: "flex",
+            flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
             color: "#fff",
-            fontSize: "2em",
             zIndex: 10,
           }}
         >
-          Loading...
+          <div style={{ width: "100%", height: "100%" }}>
+          <iframe
+  width="100%"
+  height="100%"
+  src="https://www.youtube.com/embed/D5OgYPzDKp4?autoplay=1&start=35&end=65&controls=0&modestbranding=1&mute=1&showinfo=0&iv_load_policy=3&rel=0&fs=0&disablekb=1"
+  title="Loading Video"
+  frameBorder="0"
+  allow="autoplay; encrypted-media"
+  allowFullScreen
+></iframe>
+
+
+          </div>
+          <button
+            onClick={() => setLoading(false)}
+            style={{
+              position: "absolute",
+              bottom: "5%",
+              padding: "15px 30px",
+              fontSize: "1.5em",
+              cursor: "pointer",
+              borderRadius: "10px",
+              border: "none",
+              backgroundColor: "#ff5555",
+              color: "#fff",
+            }}
+          >
+            Start Game
+          </button>
         </div>
       )}
     </div>
