@@ -50,6 +50,11 @@ def retrieve_dict(database_name):
 
     return list(database.find({}))
 
+def nuke(database_name):
+    print("NUKKINGGGG")
+    testPlanet = dbname[database_name]
+    testPlanet.drop()
+
 # KEEP THIS COMMENTED (it flushes the database)
 # testPlanet = dbname["Planet_Test"]
 # testPlanet.drop()

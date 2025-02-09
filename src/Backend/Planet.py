@@ -11,7 +11,7 @@ class Planet:
     instance = 0
 
     def __init__(self,name, xcor, ycor, atmosphere, oxygen, pollution, population, water, food, mineral, ships = None
-                 , water_production = None, food_production = None, industrial_production = 0, fuel = 0, ID = None):
+                 , water_production = None, food_production = None, industrial_production = 0, fuel = 0, ID = None, industrial = 0):
         if ID is None:
             Planet.instance += 1
             self.ID = Planet.instance
@@ -43,7 +43,7 @@ class Planet:
         # Resources
         self.water = water
         self.food = food
-        self.industrial = 0
+        self.industrial = industrial
         self.fuel = fuel
         # Mineral should probably be a dict
         self.mineral = mineral
@@ -110,6 +110,7 @@ class Planet:
             population=info["Population"],
             water=resources["Water"],
             food=resources["Food"],
+            industrial=resources["Industrial"],
             mineral=resources["Mineral"],
             ships=planet_dict["Ships"],
             water_production=production["Water Production"],
@@ -155,18 +156,20 @@ class Planet:
             self.industrial -= SHIP_COST
 
             return Ship(ship_name, self.ID)
+        else:
+            print("Haha poor")
 
-#     def add_resources(self, ship_name, population = 0, food = 0, water = 0, fuel = 0, industrial = 0):
-#         for ship in self.ships:
-#             if ship.name == ship_name:
-#                 ship.add_resources(population, food, water, fuel, industrial)
-#
-#     def unload_ship(self, ship_name, population = 0, food = 0, water = 0, fuel = 0, industrial = 0):
-#         for ship in self.ships:
-#             if ship_name == ship.name:
-#                 ship.unload_resources(population, food, water, fuel, industrial)
-#                 self.population += population
-#                 self.food += food
-#                 self.water += water
-#                 self.fuel += fuel
-#                 self.industrial += industrial
+    # def add_resources(self, ship_name, population = 0, food = 0, water = 0, fuel = 0, industrial = 0):
+    #     for ship in self.ships:
+    #         if ship.name == ship_name:
+    #             ship.add_resources(population, food, water, fuel, industrial)
+    #
+    # def unload_ship(self, ship_name, population = 0, food = 0, water = 0, fuel = 0, industrial = 0):
+    #     for ship in self.ships:
+    #         if ship_name == ship.name:
+    #             ship.unload_resources(population, food, water, fuel, industrial)
+    #             self.population += population
+    #             self.food += food
+    #             self.water += water
+    #             self.fuel += fuel
+    #             self.industrial += industrial

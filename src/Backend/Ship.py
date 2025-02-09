@@ -1,4 +1,3 @@
-
 class Ship:
     instance = 0
 
