@@ -1,3 +1,18 @@
+# ExoQuest
+
+##  Overview
+**ExoQuest** is a game that aims at challenging the player with resource management in an outer space setting. Players must strategically balance sustainability, optimize travel routes, and adapt to dynamic planetary conditions. Each planet is part of an interconnected network, allowing for strategic trade routes and resource exchange across the galaxy. When travelling to another planet, the player can choose to use the fastest path or a fuel-efficient path that is more sustainable. The fuel capacity of the ship as well as the amount of fuel available for refill on each planet is taken into account.
+
+This project is great for learning:
+- Dijkstra’s algorithms 
+- Planet generation
+
+## Features
+
+- 3d Map generation of a solar system
+- Inter planet resource management features 
+- Shortest path finding algorithms
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
 
 ## Getting Started
